@@ -1,70 +1,47 @@
-# Getting Started with Create React App
+# CloudETL frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Read the [frontend handoff](docs/FRONTEND_HANDOFF.md) before extending routes,
+authentication, or ETL features. It describes the current boundaries and next steps.
+The [dataset backend guide](../backend/DATASETS.md) covers upload validation,
+storage, API contracts, migrations, and PostgreSQL tests.
 
-## Available Scripts
+React with Create React App, plain CSS, and a small browser History API router.
+The public landing page, sign-in/registration flow, and authenticated workspace
+have separate pages and layouts. Authentication uses the existing Django session
+API. The dataset page uploads CSV, TSV, JSON, XLSX, and Parquet files and lists
+stored dataset metadata. It supports up to 10 selected files uploaded sequentially,
+with per-file results. Pipeline, run, and result pages remain **UI placeholders**.
+ETL processing, previews, downloads, and deletion are not implemented.
 
-In the project directory, you can run:
+Run commands from `frontend/` with existing dependencies available:
 
-### `npm start`
+```powershell
+npm start
+```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+The development server listens on `http://localhost:3000`. API requests use
+same-origin `/api/` URLs, so use a setup that routes `/api/` to Django for
+authentication and dataset operations. The Docker frontend's Nginx configuration
+provides this routing. Authentication and upload requests share Django session
+cookies and an in-memory CSRF token through `src/api/client.js`.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+To run checks in PowerShell:
 
-### `npm test`
+```powershell
+$env:CI = 'true'
+npm test -- --watchAll=false --runInBand
+npm run build
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+`npm run build` writes a production bundle to `build/`.
 
-### `npm run build`
+To rebuild and start the frontend in the existing local Docker setup, run from
+the repository root:
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```powershell
+docker compose up -d --build backend frontend
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+This starts or updates local services and may also start configured dependencies.
+It is a manual development command, not an automatic cloud deployment. Backend
+schema changes require explicit migrations; see the dataset backend guide.

@@ -1,0 +1,35 @@
+.datasets-upload,
+.datasets-list { padding: 28px 0; border-top: 1px solid #e5e5e5; }
+.datasets-upload h2,
+.datasets-list h2 { margin: 0 0 20px; font-size: 18px; font-weight: 600; }
+.datasets-file-label { display: block; font-size: 14px; font-weight: 500; }
+.datasets-helper { margin: 8px 0 16px; color: #626262; font-size: 13px; line-height: 1.6; }
+.datasets-file-input { display: block; max-width: 100%; margin-bottom: 20px; font-size: 14px; }
+.datasets-file-input::file-selector-button { margin-right: 12px; padding: 10px 12px; border: 1px solid #cfcfcf; border-radius: 4px; color: #171717; background: #fff; font: inherit; cursor: pointer; }
+.datasets-file-input:focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+.datasets-upload .form-alert { margin-bottom: 16px; }
+.datasets-queue { margin: 0 0 20px; padding: 0; list-style: none; }
+.datasets-queue li { display: flex; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid #ededed; font-size: 14px; line-height: 1.5; }
+.datasets-file-name { min-width: 0; overflow-wrap: anywhere; }
+.datasets-result { flex-shrink: 0; max-width: 55%; color: #626262; overflow-wrap: anywhere; }
+.datasets-result-error { color: #b42318; }
+.datasets-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.datasets-list-error { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.datasets-table-scroll { max-width: 100%; overflow-x: auto; }
+.datasets-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+.datasets-table-caption { padding-bottom: 12px; color: #626262; font-size: 13px; text-align: left; }
+.datasets-table th,
+.datasets-table td { padding: 14px 16px 14px 0; border-bottom: 1px solid #e5e5e5; line-height: 1.5; }
+.datasets-table thead th { color: #626262; font-size: 12px; font-weight: 500; }
+.datasets-table tbody th { min-width: 140px; max-width: 360px; font-weight: 500; overflow-wrap: anywhere; }
+.datasets-table td { white-space: nowrap; }
+.datasets-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 16px; margin-top: 24px; font-size: 13px; }
+.datasets-empty { padding: 24px 0; }
+.datasets-empty h3 { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
+.datasets-empty p { margin: 0; color: #626262; font-size: 14px; line-height: 1.6; }
+
+@media (max-width: 600px) {
+  .datasets-queue li { flex-direction: column; gap: 4px; }
+  .datasets-result { max-width: 100%; }
+  .datasets-pagination { justify-content: flex-start; gap: 12px; }
+}

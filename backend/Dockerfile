@@ -15,8 +15,10 @@ COPY requirements.txt ./requirements.txt
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=app:app . .
-RUN mkdir -p /app/staticfiles && chown app:app /app/staticfiles
+RUN mkdir -p /app/staticfiles /app/.gunicorn /app/media \
+    && chown app:app /app/staticfiles /app/.gunicorn /app/media \
+    && chmod 0700 /app/.gunicorn
 
 USER app
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py collectstatic --noinput && exec gunicorn backendETL.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -"]
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -"]

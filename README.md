@@ -1,32 +1,28 @@
 # CloudETL
 
-CloudETL là đồ án môn Điện toán đám mây tại trường đại học. Mục tiêu dự kiến là xây dựng một dịch vụ ETL theo mô hình SaaS, giúp người dùng kết nối, chuyển đổi và tải dữ liệu. Các tính năng ETL vẫn đang trong quá trình phát triển.
+CloudETL là đồ án môn Điện toán đám mây tại trường đại học. Mục tiêu dự kiến là xây dựng dịch vụ ETL theo mô hình SaaS; các tính năng ETL vẫn đang được phát triển.
 
-## Công nghệ
+## Công nghệ và mã nguồn
 
-- Backend: Django
-- Frontend: React
+- Backend: Django (`backend/config/`, `backend/views.py`, `backend/forms.py`, `backend/services/`, `backend/dao/`, `backend/tests/`)
+- Frontend: React (`frontend/`)
 - Cơ sở dữ liệu: PostgreSQL
-- Đóng gói và chạy dịch vụ: Docker Compose
+- Chạy dịch vụ: Docker Compose
 
 ## Chạy trên máy cá nhân
 
-Cài Docker Desktop và bật chế độ chạy Linux containers. Tại thư mục dự án, chuẩn bị tệp cấu hình gốc `.env`. Nếu chưa có, sao chép `.env.example` thành `.env` rồi thay các giá trị bí mật mẫu bằng giá trị riêng.
-
-Khởi động các dịch vụ:
+Cài Docker Desktop và bật Linux containers. Chuẩn bị `.env` ở thư mục gốc; nếu chưa có, sao chép `.env.example` thành `.env` rồi thay các giá trị bí mật mẫu.
 
 ```sh
 docker compose up -d --build
-```
-
-Tạo bảng cơ sở dữ liệu và tài khoản quản trị Django:
-
-```sh
 docker compose exec backend python manage.py migrate
 docker compose exec backend python manage.py createsuperuser
 ```
 
-Mở giao diện tại <http://localhost:8080/> hoặc trang quản trị tại <http://localhost:8080/admin/>.
+
+Giao diện: <http://localhost:8080/>. Trang quản trị: <http://localhost:8080/admin/>.
+
+Chọn **Create account** để đăng ký, **Sign in** để đăng nhập và **Sign out** để đăng xuất. Phiên đăng nhập được giữ khi tải lại trang; tài khoản đăng ký là người dùng thông thường.
 
 Xem nhật ký hoặc dừng dịch vụ:
 
@@ -35,4 +31,4 @@ docker compose logs -f
 docker compose down
 ```
 
-Lệnh `docker compose down` giữ lại dữ liệu PostgreSQL.
+`docker compose down` giữ lại dữ liệu PostgreSQL.

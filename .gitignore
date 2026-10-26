@@ -9,7 +9,8 @@ __pycache__/
 *.sqlite3
 .venv/
 venv/
-backendETL/staticfiles/
+backend/staticfiles/
+backend/media/
 
 # Node / Create React App
 frontend/node_modules/

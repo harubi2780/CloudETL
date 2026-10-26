@@ -1,4 +1,4 @@
-"""Django settings for backendETL."""
+"""Django settings for CloudETL."""
 
 import os
 from pathlib import Path
@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "datasets.apps.DatasetsConfig",
 ]
 
 MIDDLEWARE = [
@@ -68,7 +69,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "backendETL.urls"
+ROOT_URLCONF = "config.urls"
+CSRF_FAILURE_VIEW = "views.csrf_failure"
 
 TEMPLATES = [
     {
@@ -85,7 +87,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "backendETL.wsgi.application"
+WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": {
@@ -96,6 +98,7 @@ DATABASES = {
         "HOST": os.getenv("DB_HOST", "db"),
         "PORT": os.getenv("DB_PORT", "5432"),
         "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        "TEST": {"NAME": os.getenv("DJANGO_TEST_DATABASE_NAME", f"test_{os.environ['POSTGRES_DB']}")},
         "OPTIONS": {
             "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "5")),
             "sslmode": os.getenv("DB_SSLMODE", "prefer"),
@@ -117,6 +120,19 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_ROOT = Path(os.getenv("DATASET_STORAGE_ROOT", str(BASE_DIR / "media")))
+DATASET_MAX_FILE_SIZE_BYTES = int(os.getenv("DATASET_MAX_FILE_SIZE_BYTES", str(25 * 1024 * 1024)))
+if not 0 < DATASET_MAX_FILE_SIZE_BYTES <= 25 * 1024 * 1024:
+    raise ImproperlyConfigured("DATASET_MAX_FILE_SIZE_BYTES must be between 1 and 26214400; coordinate larger limits with the proxy and validators.")
+FILE_UPLOAD_HANDLERS = [
+    "datasets.upload_handlers.DatasetSizeLimitHandler",
+    "django.core.files.uploadhandler.MemoryFileUploadHandler",
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
+FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024
+FILE_UPLOAD_PERMISSIONS = 0o600
+FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o700
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},

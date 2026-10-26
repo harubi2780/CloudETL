@@ -1,5 +1,7 @@
 services:
   db:
+    ports:
+      - "127.0.0.1:5433:5432"
     build:
       context: ./database
     restart: unless-stopped
@@ -20,7 +22,7 @@ services:
 
   backend:
     build:
-      context: ./backendETL
+      context: ./backend
     restart: unless-stopped
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in the root .env file}
@@ -36,6 +38,10 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       DB_SSLMODE: ${DB_SSLMODE:-prefer}
+      DATASET_STORAGE_ROOT: /app/media
+      DATASET_MAX_FILE_SIZE_BYTES: ${DATASET_MAX_FILE_SIZE_BYTES:-26214400}
+    volumes:
+      - dataset_files:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -51,3 +57,4 @@ services:
 
 volumes:
   postgres_data:
+  dataset_files:

@@ -1,0 +1,116 @@
+.landing-page {
+  max-width: 1120px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+.landing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 100px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.landing-navigation,
+.landing-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.landing-hero {
+  max-width: 720px;
+  padding: 112px 0 104px;
+}
+
+.landing-eyebrow {
+  margin: 0 0 20px;
+  color: #626262;
+  font-size: 14px;
+}
+
+.landing-hero h1 {
+  margin: 0;
+  font-size: clamp(40px, 5.5vw, 64px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -2px;
+}
+
+.landing-introduction {
+  max-width: 540px;
+  margin: 24px 0 32px;
+  color: #626262;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.landing-workflow {
+  padding: 48px 0 72px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.landing-workflow h2 {
+  margin: 0 0 36px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+.landing-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 48px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-step-number {
+  color: #737373;
+  font-size: 13px;
+}
+
+.landing-step h3 {
+  margin: 16px 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.landing-step p {
+  margin: 0;
+  color: #626262;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.landing-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 28px 0;
+  border-top: 1px solid #e5e5e5;
+  color: #626262;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .landing-page { padding: 0 24px; }
+  .landing-header { min-height: 88px; gap: 16px; }
+  .landing-navigation { gap: 16px; }
+  .landing-hero { padding: 72px 0; }
+  .landing-hero h1 { letter-spacing: -1.2px; }
+  .landing-introduction { font-size: 16px; }
+  .landing-actions { align-items: flex-start; gap: 20px; }
+  .landing-workflow { padding: 36px 0 48px; }
+  .landing-steps { grid-template-columns: 1fr; gap: 32px; }
+}
+
+@media (max-width: 380px) {
+  .landing-header { align-items: flex-start; flex-direction: column; padding: 24px 0; }
+}
