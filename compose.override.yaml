@@ -1,0 +1,43 @@
+services:
+  rustfs:
+    image: ghcr.io/rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
+    restart: unless-stopped
+    command: ["/data"]
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ROOT_ACCESS_KEY:?Set RUSTFS_ROOT_ACCESS_KEY in the root .env file}
+      RUSTFS_SECRET_KEY: ${RUSTFS_ROOT_SECRET_KEY:?Set RUSTFS_ROOT_SECRET_KEY in the root .env file}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes:
+      - rustfs_data:/data
+
+  storage-init:
+    build:
+      context: ./object-storage
+    restart: "no"
+    environment:
+      RUSTFS_ROOT_ACCESS_KEY: ${RUSTFS_ROOT_ACCESS_KEY:?Set RUSTFS_ROOT_ACCESS_KEY in the root .env file}
+      RUSTFS_ROOT_SECRET_KEY: ${RUSTFS_ROOT_SECRET_KEY:?Set RUSTFS_ROOT_SECRET_KEY in the root .env file}
+      RUSTFS_APP_ACCESS_KEY: ${RUSTFS_APP_ACCESS_KEY:?Set RUSTFS_APP_ACCESS_KEY in the root .env file}
+      RUSTFS_APP_SECRET_KEY: ${RUSTFS_APP_SECRET_KEY:?Set RUSTFS_APP_SECRET_KEY in the root .env file}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:?Set AWS_STORAGE_BUCKET_NAME in the root .env file}
+    depends_on:
+      - rustfs
+
+  backend:
+    environment:
+      AWS_S3_ENDPOINT_URL: http://rustfs:9000
+      AWS_S3_ADDRESSING_STYLE: path
+      AWS_ACCESS_KEY_ID: ${RUSTFS_APP_ACCESS_KEY:?Set RUSTFS_APP_ACCESS_KEY in the root .env file}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_APP_SECRET_KEY:?Set RUSTFS_APP_SECRET_KEY in the root .env file}
+      DATASET_LEGACY_STORAGE_ROOT: /app/legacy-media
+    volumes:
+      - dataset_files:/app/legacy-media:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+
+volumes:
+  rustfs_data:

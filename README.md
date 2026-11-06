@@ -32,3 +32,7 @@ docker compose down
 ```
 
 `docker compose down` giữ lại dữ liệu PostgreSQL.
+
+Tải nhiều tệp ở trang **Datasets**: thêm bằng nút chọn hoặc kéo thả, xóa tệp khỏi danh sách rồi bấm **Upload**. Tệp lưu riêng trong object storage; PostgreSQL lưu thông tin và chủ sở hữu.
+
+Cấu hình lưu trữ cục bộ và AWS S3: [hướng dẫn](backend/OBJECT_STORAGE.md).

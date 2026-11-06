@@ -16,7 +16,7 @@ The frontend should send transformation configurations to the backend as structu
 
 user uploaded file is store in an storage and database will store the metadata and reference to that file.
 
-data after being 
+data after being transform and load will be store as parquet file, but can be convert to any following file format: xslx, csv, tsv, json for the user to view, download or transfer to their database.
 
 ## 2. Development Principles
 
@@ -46,6 +46,7 @@ data after being
 - Keep delegated tasks narrowly scoped with clear acceptance criteria.
 - Do not delegate security-sensitive decisions without review.
 - Ask before installing dependencies or making significant configuration changes.
+- you may spawn up to 5 subagent depens on the task, ask if >= 3.
 
 ### Phase 3: Verify and Review
 - Inspect all modified files and review the actual diff.
@@ -64,7 +65,7 @@ Summarize:
 ## 4. Backend Rules
 
 - Follow Django conventions and keep business logic organized.
-- follow ORM approach.
+- follow ORM, seriallizer approach.
 - Keep secrets and environment-specific settings out of source code.
 - Validate request payloads and transformation configurations.
 - Use appropriate Django models, migrations, and database constraints.

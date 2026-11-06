@@ -5,6 +5,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
+from storage_config import build_dataset_storage
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
@@ -120,7 +121,9 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_ROOT = Path(os.getenv("DATASET_STORAGE_ROOT", str(BASE_DIR / "media")))
+# Kept only as the source for the explicit legacy-to-object-store copy command.
+# New uploads use STORAGES["default"] and never fall back here.
+MEDIA_ROOT = Path(os.getenv("DATASET_LEGACY_STORAGE_ROOT", str(BASE_DIR / "media")))
 DATASET_MAX_FILE_SIZE_BYTES = int(os.getenv("DATASET_MAX_FILE_SIZE_BYTES", str(25 * 1024 * 1024)))
 if not 0 < DATASET_MAX_FILE_SIZE_BYTES <= 25 * 1024 * 1024:
     raise ImproperlyConfigured("DATASET_MAX_FILE_SIZE_BYTES must be between 1 and 26214400; coordinate larger limits with the proxy and validators.")
@@ -134,7 +137,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024
 FILE_UPLOAD_PERMISSIONS = 0o600
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o700
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": build_dataset_storage(),
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 

@@ -3,16 +3,21 @@
 ## Current scope
 
 CloudETL has a public landing page, Django session authentication, an authenticated
-workspace, and working dataset upload/listing. The UI uses white surfaces, dark
+workspace, and working dataset upload, listing, replacement, and deletion. The UI uses white surfaces, dark
 text, subtle borders, and minimal rounding. The upload UI adds no frontend runtime
 dependencies.
 
 Dataset files persist in backend storage with owner-scoped metadata in PostgreSQL.
 Pipeline editing, execution, results, and activity remain previews with coming-soon
-actions. There are no URL imports, file previews, downloads, deletion, or ETL
+actions. There are no URL imports, file previews, downloads, or ETL
 processing. The UI does not invent statistics or sample records. Read the
 [dataset backend guide](../../backend/DATASETS.md) for contracts, validation
 bounds, storage, migrations, and the dedicated PostgreSQL test database.
+
+Dataset rows offer Replace and Delete actions with explicit confirmation. Replacing
+requires a valid replacement file and keeps the dataset ID. Deletion is permanent.
+Both use the shared CSRF-aware API client and show backend cleanup warnings.
+Operation success remains visible even if the subsequent list refresh fails.
 
 ## Source map
 
@@ -74,12 +79,16 @@ bounds, storage, migrations, and the dedicated PostgreSQL test database.
 ## Extending the workspace
 
 The dataset page is the first implemented feature boundary. It loads server limits
-and accepts up to 10 files per selection. Client checks catch unsupported, empty,
-or oversized files; Django validates content and remains authoritative. Each
+and accepts a queue of up to 10 pending files. Picker selections and drag-and-drop
+append to the queue; users can remove individual files before Upload. Rejected
+files are announced and excluded instead of remaining in the pending queue.
+Client checks catch unsupported, empty, or oversized files; Django validates
+content and remains authoritative. Each
 valid file is sent sequentially in a separate multipart request containing only
 `file`. There are no fake progress percentages. A batch keeps per-file ready,
-uploading, uploaded, and failed states, preserving completed results when selecting
-another batch. No queue is persisted across reloads.
+uploading, uploaded, and failed states, preserving the latest 20 completed results
+when selecting another batch. Completed entries retain only filename/size metadata
+and release their file objects. No queue is persisted across reloads.
 
 The dataset list has separate loading, successful empty, populated, and error/retry
 states, with 20 records per server page. Successful uploads refresh page 1. A list
@@ -103,10 +112,12 @@ there are no public storage links or retrieval controls in this UI.
 
 The backend must authorize every feature request and validate uploaded files and
 transformation configurations. Dataset uploads already use Django storage with
-PostgreSQL metadata and references; local Compose persists files in `dataset_files`.
-S3 is a future storage adapter, not a current connection. Represent transformation
-steps as structured JSON sent to Django. Long-running ETL work should run as background jobs, with
-progress and results exposed through explicit API contracts. Do not block web
+PostgreSQL metadata and references; local Compose uses a private S3-compatible
+RustFS bucket. The same Django storage adapter supports private AWS S3 through
+backend environment configuration. The legacy `dataset_files` volume remains
+read-only for explicit verified copying. Represent transformation steps as
+structured JSON sent to Django. Long-running ETL work should run as background
+jobs, with progress and results exposed through explicit API contracts. Do not block web
 requests on long transformations or expose storage/database credentials in React.
 
 Continue using the existing Django session/CSRF approach. Do not add auth tokens

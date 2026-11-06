@@ -18,7 +18,13 @@ from django.utils.dateparse import parse_datetime
 from datasets.models import Dataset
 
 
-@override_settings(ALLOWED_HOSTS=["testserver"])
+@override_settings(
+    ALLOWED_HOSTS=["testserver"],
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    },
+)
 class DatasetApiTests(TestCase):
     endpoint = "/api/datasets/"
     public_fields = {"id", "filename", "format", "size_bytes", "uploaded_at"}
@@ -404,3 +410,110 @@ class DatasetApiTests(TestCase):
                     with transaction.atomic():
                         Dataset.objects.create(**attributes)
                 self.assertEqual(Dataset.objects.count(), 0)
+
+    def management_dataset(self):
+        response = self.post_file()
+        return Dataset.objects.get(pk=response.json()["dataset"]["id"])
+
+    def replace_file(self, dataset, content=b"id\n2\n", **extra):
+        return self.client.post(f"{self.endpoint}{dataset.pk}/replace/",
+                                {"file": SimpleUploadedFile("replacement.csv", content), **extra},
+                                HTTP_X_CSRFTOKEN=self.token)
+
+    def delete_file(self, dataset):
+        return self.client.delete(f"{self.endpoint}{dataset.pk}/", HTTP_X_CSRFTOKEN=self.token)
+
+    def test_replace_preserves_identity_and_upload_time_and_removes_old_bytes(self):
+        dataset = self.management_dataset()
+        old_name, uploaded_at = dataset.file.name, dataset.uploaded_at
+        response = self.replace_file(dataset)
+        self.assertEqual(response.status_code, 200, response.content)
+        dataset.refresh_from_db()
+        self.assert_public_metadata(response.json()["dataset"], dataset)
+        self.assertEqual(dataset.uploaded_at, uploaded_at)
+        self.assertEqual(dataset.filename, "replacement.csv")
+        self.assertEqual(dataset.sha256, hashlib.sha256(b"id\n2\n").hexdigest())
+        self.assertFalse(dataset.file.storage.exists(old_name))
+        with dataset.file.open("rb") as stored:
+            self.assertEqual(stored.read(), b"id\n2\n")
+        self.assertEqual(len(self.stored_files()), 1)
+
+    def test_replacement_validation_preserves_original(self):
+        dataset = self.management_dataset()
+        original_name = dataset.file.name
+        for content, extra in [(b"", {}), (b"a,b\n1", {}), (b"id\n2", {"owner": "other"})]:
+            response = self.replace_file(dataset, content, **extra)
+            self.assertEqual(response.status_code, 400)
+        dataset.refresh_from_db()
+        self.assertEqual(dataset.file.name, original_name)
+        self.assertEqual(len(self.stored_files()), 1)
+
+    def test_management_requires_owner_and_csrf(self):
+        dataset = self.management_dataset()
+        for url, method in [(f"{self.endpoint}{dataset.pk}/", "delete"),
+                            (f"{self.endpoint}{dataset.pk}/replace/", "post")]:
+            self.assertEqual(getattr(self.client, method)(url).status_code, 403)
+        self.client.force_login(self.other_user)
+        self.assertEqual(self.replace_file(dataset).status_code, 404)
+        self.assertEqual(self.delete_file(dataset).status_code, 404)
+        self.assertTrue(Dataset.objects.filter(pk=dataset.pk).exists())
+        self.assertEqual(len(self.stored_files()), 1)
+        self.client.logout()
+        self.token = self.csrf_token(self.client)
+        self.assertEqual(self.replace_file(dataset).status_code, 401)
+        self.assertEqual(self.delete_file(dataset).status_code, 401)
+
+    def test_delete_removes_metadata_and_object_and_missing_returns_404(self):
+        dataset = self.management_dataset()
+        response = self.delete_file(dataset)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"deleted": True})
+        self.assertFalse(Dataset.objects.exists())
+        self.assertEqual(self.stored_files(), set())
+        self.assertEqual(self.delete_file(dataset).status_code, 404)
+        self.assertEqual(self.replace_file(dataset).status_code, 404)
+
+    def test_failed_replacement_database_write_cleans_new_file_only(self):
+        dataset = self.management_dataset()
+        before = self.stored_files()
+        with patch.object(Dataset, "save", side_effect=IntegrityError("private detail")), self.assertLogs("services.dataset_service", level="ERROR"):
+            response = self.replace_file(dataset)
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("private detail", response.content.decode())
+        self.assertEqual(self.stored_files(), before)
+        dataset.refresh_from_db()
+        self.assertEqual(dataset.filename, "source.csv")
+
+    def test_failed_delete_database_write_preserves_object(self):
+        dataset = self.management_dataset()
+        before = self.stored_files()
+        with patch.object(Dataset, "delete", side_effect=IntegrityError("private detail")), self.assertLogs("services.dataset_service", level="ERROR"):
+            response = self.delete_file(dataset)
+        self.assertEqual(response.status_code, 503)
+        self.assertTrue(Dataset.objects.filter(pk=dataset.pk).exists())
+        self.assertEqual(self.stored_files(), before)
+
+    def test_storage_cleanup_failure_reports_success_with_warning(self):
+        dataset = self.management_dataset()
+        storage = dataset.file.storage
+        with patch.object(storage, "delete", side_effect=OSError("private detail")), self.assertLogs("services.dataset_service", level="ERROR"):
+            response = self.replace_file(dataset)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("warning", response.json())
+        self.assertNotIn("private detail", response.content.decode())
+        with patch.object(storage, "delete", side_effect=OSError("private detail")), self.assertLogs("services.dataset_service", level="ERROR"):
+            response = self.delete_file(dataset)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["deleted"])
+        self.assertIn("warning", response.json())
+        self.assertFalse(Dataset.objects.exists())
+
+    def test_failed_replacement_storage_write_preserves_original(self):
+        dataset = self.management_dataset()
+        before = self.stored_files()
+        with patch.object(dataset.file.storage, "save", side_effect=OSError("private detail")), self.assertLogs("services.dataset_service", level="ERROR"):
+            response = self.replace_file(dataset)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.stored_files(), before)
+        dataset.refresh_from_db()
+        self.assertEqual(dataset.filename, "source.csv")

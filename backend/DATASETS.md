@@ -2,8 +2,8 @@
 
 CloudETL accepts authenticated uploads of CSV, TSV, JSON, XLSX, and Parquet files.
 Original bytes go to Django storage; PostgreSQL holds ownership, metadata, and a
-storage reference. This feature provides upload and metadata listing only.
-Pipelines, execution, URL imports, previews, downloads, and deletion are not
+storage reference. Users can upload, list, replace, and delete their datasets.
+Pipelines, execution, URL imports, previews, and downloads are not
 implemented. See the [frontend handoff](../frontend/docs/FRONTEND_HANDOFF.md) for
 the page and routing structure.
 
@@ -29,16 +29,26 @@ If insertion fails after saving a file, the service attempts to remove only that
 new file. Cleanup failure is logged; storage and PostgreSQL do not share an atomic
 transaction, so operational reconciliation may be needed after a storage failure.
 
-The local backend uses `FileSystemStorage`, `DATASET_STORAGE_ROOT=/app/media`, and
-the persistent Compose named volume `dataset_files`. Outside Compose the storage
-root defaults to `backend/media`. PostgreSQL has its separate `postgres_data`
-volume. Removing either volume deletes its corresponding data; normal rebuilding
-does not remove volumes.
+Local Compose stores new uploads in a private S3-compatible RustFS bucket with
+its own persistent volume. On AWS, the same Django S3 storage adapter targets a
+private Amazon S3 bucket. PostgreSQL stores only metadata and the object key;
+file bytes are not stored in the database. The original `dataset_files` volume
+is retained read-only at `/app/legacy-media` for explicit copying of older files.
+See [object storage setup](OBJECT_STORAGE.md) for credentials, AWS configuration,
+and the verified legacy-copy procedure. No existing files are moved automatically.
 
-All file access goes through Django's storage abstraction so a future S3 adapter
-can replace local storage. S3 is not configured now. API responses omit storage
-names, storage URLs, owner IDs, and SHA-256 values. There are no public media or
-dataset download endpoints; Nginx has no uploaded-media alias.
+Ownership comes from the authenticated session, not form fields. Each object key
+includes that user's ID and a generated dataset UUID. Owner-prefixed keys organize
+objects; authorization comes from owner-filtered database queries and the private
+bucket, not from guessing whether a key is secret. Backend credentials are never
+sent to React. Future retrieval must authorize ownership before reading an object
+or generating a short-lived signed URL.
+
+API responses omit storage names, storage URLs, owner IDs, and SHA-256 values.
+There are no public media or dataset download endpoints; Nginx has no uploaded-media
+alias. Storage and PostgreSQL remain separate services: an interrupted upload can
+leave an unreferenced object, even though ordinary database errors trigger cleanup.
+Bucket reconciliation remains an operational concern.
 
 ## API contract
 
@@ -111,6 +121,40 @@ stay out of response messages. Responses are marked `no-store`.
 
 ## Validation and resource bounds
 
+### Dataset management
+
+`POST /api/datasets/<uuid>/replace/` accepts the same single-file multipart
+payload and validation as upload. It returns HTTP 200 with `{"dataset": ...}`.
+Replacement preserves the dataset ID, owner, and original `uploaded_at` value;
+filename, format, size, hash, and stored bytes reflect the replacement. A supported
+format may replace a different supported format. Previous versions are not retained.
+
+`DELETE /api/datasets/<uuid>/` returns HTTP 200 with `{"deleted": true}`.
+Both routes require session authentication and CSRF protection. Another user's
+dataset and a missing dataset both return `404 dataset_not_found`. Storage or
+database write failures return `503 replace_failed` or `503 delete_failed`.
+
+Replacement objects use fresh keys at
+`datasets/<owner-id>/<dataset-uuid>/<version-uuid>.<format>` so saving a replacement
+never overwrites the original. Mutations lock the owner-filtered database row and
+commit before removing the obsolete object. A failed database update attempts to
+clean up only the newly saved replacement. Failed metadata deletion leaves its
+stored object intact. Concurrent replacements/deletions are serialized by the row
+lock; the last successful replacement wins.
+
+Object storage and PostgreSQL cannot commit atomically. A cleanup failure after
+commit returns HTTP 200 with a `warning` string: the metadata operation succeeded,
+but an unreferenced private object may remain. The frontend displays that warning;
+server logs record its key for operational reconciliation. Cleanup is not retried
+automatically, and a process interruption between commit and cleanup can also
+leave an orphan. Bucket versioning, if enabled, has its own retention policy.
+
+Each dataset row offers Replace and Delete with an inline confirmation panel.
+Replacement requires choosing a valid file and explicitly confirming. Deletion
+warns that it cannot be undone. Pending actions prevent conflicting page actions;
+successful mutations refresh the list, moving back a page when its last item is
+deleted. Mutation results remain separate from refresh errors.
+
 The server is authoritative. An allowed filename extension is necessary, and the
 matching parser must successfully validate the content; client MIME types are not
 trusted. Empty byte streams are rejected. Validation runs synchronously in the
@@ -155,12 +199,18 @@ These settings do not replace the per-file byte limit. Stored files use mode
 ## Frontend behavior
 
 `/dashboard/datasets` loads real metadata and server-advertised limits. Users can
-select up to 10 files per batch. The page checks extension, empty size, and byte
-limit before sending one multipart request per valid file, sequentially. Queue
-entries report ready, uploading, uploaded, or failed; there are no simulated
-percentages. Completed and failed results remain visible while choosing another
-batch. Upload failures do not prevent the remaining batch from being attempted,
-except a 401 stops subsequent uploads and returns the session to sign-in.
+build a queue of up to 10 pending files through the file picker or drag and drop.
+Further selections append files; individual files can be removed before pressing
+Upload. The queue shows filenames and sizes. Unsupported, empty, or oversized
+files produce notices and are excluded from the queue. Duplicate selections and
+selections exceeding the remaining capacity do not replace the existing queue.
+
+Only pressing Upload starts requests. One multipart request is sent per file,
+sequentially, preserving the per-file backend validation and proxy size limits.
+The queue cannot be edited during upload. Results report uploaded or failed states,
+without simulated percentages. Upload failures do not prevent remaining files
+from being attempted, except a 401 stops further requests and returns to sign-in.
+Client checks are convenience only; the backend independently validates every file.
 
 Successful uploads refresh page 1 of the list. Upload results and list refresh
 errors remain separate, so a successful upload is not described as failed if
@@ -217,8 +267,9 @@ docker compose exec -e DJANGO_TEST_DATABASE_NAME=cloudetl_dataset_tests backend 
 `--keepdb` reuses the precreated database and preserves it afterward; Django still
 applies required test schema migrations and isolates test records. Never point
 this variable at the normal application database or clear that database for
-tests. Upload tests override `MEDIA_ROOT` with a temporary directory and clean up
-only their own test files.
+tests. Upload tests explicitly select filesystem storage with a temporary directory,
+independent of the configured production bucket, and clean up only test files.
+Object-storage integration tests use a separate temporary bucket or container.
 
 ## Remaining boundaries
 
