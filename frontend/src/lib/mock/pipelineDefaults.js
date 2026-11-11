@@ -1,6 +1,8 @@
 // Pipeline Operations catalog, dynamic config description generator, and preview simulation
 
 export const OPERATION_DEFINITIONS = [
+  // NOTE: The schema manipulation functions are defined below and exported as applyToSchema.
+
   {
     type: 'select_columns',
     label: 'Select Columns',
@@ -119,6 +121,48 @@ let stepCounter = 1;
  * Creates a clean PipelineStep instance without any mock stats.
  * Type PipelineStep: { id, type, name, config, enabled }
  */
+export function applyToSchema(schema, step, stepIdx) {
+  // Similar logic as in src/lib/pipeline/schema.js
+  const newSchema = schema.map(col => ({ ...col }));
+  if (!step.enabled) return newSchema;
+  const { type, config } = step;
+  switch (type) {
+    case 'select_columns': {
+      const keepSet = new Set(config.selectedColumns || []);
+      return newSchema.map(col => {
+        if (!keepSet.has(col.name) && col.status !== 'dropped') {
+          return { ...col, status: 'dropped', droppedInStep: stepIdx + 1 };
+        }
+        return col;
+      });
+    }
+    case 'cast_type': {
+      const convMap = new Map();
+      (config.conversions || []).forEach(c => {
+        if (c.column && c.toType) convMap.set(c.column, c.toType);
+      });
+      return newSchema.map(col => {
+        if (convMap.has(col.name) && col.status !== 'dropped') {
+          return { ...col, type: convMap.get(col.name), status: 'changed', changedInStep: stepIdx + 1 };
+        }
+        return col;
+      });
+    }
+    case 'format_datetime': {
+      const target = config.column;
+      if (!target) return newSchema;
+      return newSchema.map(col => {
+        if (col.name === target && col.status !== 'dropped') {
+          return { ...col, type: 'datetime', status: 'changed', changedInStep: stepIdx + 1 };
+        }
+        return col;
+      });
+    }
+    default:
+      return newSchema;
+  }
+}
+
 export function createStep(type, columns = []) {
   const op = OPERATION_DEFINITIONS.find((o) => o.type === type);
   const id = `step_${Date.now()}_${stepCounter++}`;
@@ -463,3 +507,4 @@ export function simulatePipeline(dataset, steps, upToStepId = null) {
     rows: currentRows,
   };
 }
+export { applyToSchema };

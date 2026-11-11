@@ -5,7 +5,10 @@ import OperationsPalette from '../components/pipeline/OperationsPalette';
 import StepsList from '../components/pipeline/StepsList';
 import StepConfigPanel from '../components/pipeline/StepConfigPanel';
 import DataPreviewTable from '../components/pipeline/DataPreviewTable';
-import './PipelinesPage.css';
+import { computeSchemaAtStep, getWarningsForStep } from '../lib/pipeline/schema';
+import { applyToSchema } from '../lib/mock/pipelineDefaults';
+
+
 
 export default function PipelinesPage() {
   const [pipelineName, setPipelineName] = useState('Data Cleaning Pipeline');
@@ -54,9 +57,69 @@ export default function PipelinesPage() {
     return steps.find((s) => s.id === activeStepId) || null;
   }, [steps, activeStepId]);
 
-  const activeStepIndex = useMemo(() => {
-    return steps.findIndex((s) => s.id === activeStepId);
-  }, [steps, activeStepId]);
+  // Index of the active step for convenience
+  const activeStepIndex = useMemo(() => steps.findIndex((s) => s.id === activeStepId), [steps, activeStepId]);
+
+  // Compute schema before the active step (used by ColumnPicker)
+  const schemaBeforeActiveStep = useMemo(() => {
+    if (!activeStepIndex || activeStepIndex < 0) return [];
+    const baseSchema = dataset.columns.map(col => ({ name: col.name, type: col.type }));
+    return computeSchemaAtStep(baseSchema, steps, activeStepIndex - 1);
+  }, [dataset.columns, steps, activeStepIndex]);
+
+  // Compute full schema after all steps (used for Columns panel)
+  const schemaAfterAllSteps = useMemo(() => {
+    const baseSchema = dataset.columns.map(col => ({ name: col.name, type: col.type }));
+    return computeSchemaAtStep(baseSchema, steps, steps.length - 1);
+  }, [dataset.columns, steps]);
+
+  // Compute warnings for each step
+  const stepWarnings = useMemo(() => {
+    const warningsMap = {};
+    const baseSchema = dataset.columns.map(col => ({ name: col.name, type: col.type }));
+    let schemaSoFar = baseSchema;
+    steps.forEach((step, idx) => {
+      const warnings = getWarningsForStep(schemaSoFar, step);
+      if (warnings.length) warningsMap[step.id] = warnings;
+      // update schemaSoFar for next step
+      schemaSoFar = applyToSchema(schemaSoFar, step, idx);
+    });
+    return warningsMap;
+  }, [dataset.columns, steps]);
+
+  const handleColumnClick = (colName) => {
+    if (!activeStep) return;
+    const { type, config } = activeStep;
+    let newConfig = { ...config };
+    switch (type) {
+      case 'select_columns':
+        // toggle column in selectedColumns array
+        const sel = new Set(newConfig.selectedColumns || []);
+        if (sel.has(colName)) sel.delete(colName); else sel.add(colName);
+        newConfig.selectedColumns = Array.from(sel);
+        break;
+      case 'cast_type':
+        // add or update conversion for this column to a default type (string)
+        const convs = newConfig.conversions || [];
+        const existing = convs.find(c => c.column === colName);
+        if (existing) {
+          existing.toType = existing.toType === 'string' ? 'integer' : 'string';
+        } else {
+          convs.push({ column: colName, toType: 'string' });
+        }
+        newConfig.conversions = convs;
+        break;
+      case 'format_datetime':
+        newConfig.column = colName;
+        break;
+      default:
+        // other steps ignore column clicks
+        return;
+    }
+    handleUpdateConfig(newConfig);
+  };
+
+
 
   const handleAddStep = (type, cols) => {
     const newStep = createStep(type, cols || dataset.columns);
