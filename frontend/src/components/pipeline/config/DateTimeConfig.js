@@ -2,7 +2,7 @@ import React from 'react';
 import { SearchableColumnSelect } from '../ColumnPicker';
 
 export default function DateTimeConfig({ config, onChange, columns }) {
-  const currentColumn = config.column || (columns[0] ? columns[0].name : '');
+  const currentColumn = config.column || '';
   const inputFormat = config.inputFormat || 'auto';
   const outputFormat = config.outputFormat || 'YYYY-MM-DD';
 

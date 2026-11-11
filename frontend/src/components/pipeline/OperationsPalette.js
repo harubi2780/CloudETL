@@ -1,15 +1,25 @@
 import React from 'react';
 import { OPERATION_DEFINITIONS } from '../../lib/mock/pipelineDefaults';
 
+const OPERATION_ICONS = {
+  select_columns: '▦',
+  drop_duplicates: '≠',
+  handle_null: '∅',
+  cast_type: '↔',
+  string_transform: 'Aa',
+  filter_rows: '▽',
+  replace_value: '⇄',
+  format_datetime: '◷',
+};
+
 export default function OperationsPalette({ onAddStep, columns }) {
   return (
     <div className="pipeline-panel operations-palette-panel">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Operations</h2>
-          <p className="panel-subtitle">Click an operation to add to pipeline</p>
+          <p className="panel-subtitle">Click to add a step</p>
         </div>
-        <span className="badge-count">{OPERATION_DEFINITIONS.length}</span>
       </div>
 
       <div className="operations-list">
@@ -19,14 +29,12 @@ export default function OperationsPalette({ onAddStep, columns }) {
             type="button"
             className="operation-card"
             onClick={() => onAddStep(op.type, columns)}
-            title={`Add ${op.label} step`}
+            title={`${op.label}: ${op.shortDesc}`}
+            aria-label={`Add ${op.label} step`}
           >
-            <div className="op-card-top">
-              <span className="op-badge">{op.badge}</span>
-              <span className="op-add-icon">+</span>
-            </div>
+            <span className="op-icon" aria-hidden="true">{OPERATION_ICONS[op.type]}</span>
             <strong className="op-title">{op.label}</strong>
-            <p className="op-desc">{op.shortDesc}</p>
+            <span className="op-add-icon" aria-hidden="true">+</span>
           </button>
         ))}
       </div>

@@ -1,14 +1,60 @@
 // Pipeline Operations catalog, dynamic config description generator, and preview simulation
 
-export const OPERATION_DEFINITIONS = [
-  // NOTE: The schema manipulation functions are defined below and exported as applyToSchema.
+const cloneSchema = (schema) => schema.map((column) => ({ ...column }));
 
+const applySelectColumnsToSchema = (schema, config, stepIndex = 0) => {
+  const selected = new Set(config.selectedColumns || []);
+  return cloneSchema(schema).map((column) => {
+    if (!selected.has(column.name) && column.status !== 'dropped') {
+      return { ...column, status: 'dropped', droppedInStep: stepIndex + 1 };
+    }
+    return column;
+  });
+};
+
+const applyCastTypeToSchema = (schema, config, stepIndex = 0) => {
+  const conversions = new Map(
+    (config.conversions || [])
+      .filter((conversion) => conversion.column && conversion.toType)
+      .map((conversion) => [conversion.column, conversion.toType])
+  );
+  return cloneSchema(schema).map((column) => {
+    if (conversions.has(column.name) && column.status !== 'dropped') {
+      return {
+        ...column,
+        type: conversions.get(column.name),
+        status: 'changed',
+        changedInStep: stepIndex + 1,
+      };
+    }
+    return column;
+  });
+};
+
+const applyDateTimeToSchema = (schema, config, stepIndex = 0) => {
+  return cloneSchema(schema).map((column) => {
+    if (column.name === config.column && column.status !== 'dropped') {
+      return {
+        ...column,
+        type: 'datetime',
+        status: 'changed',
+        changedInStep: stepIndex + 1,
+      };
+    }
+    return column;
+  });
+};
+
+const preserveSchema = (schema) => cloneSchema(schema);
+
+export const OPERATION_DEFINITIONS = [
   {
     type: 'select_columns',
     label: 'Select Columns',
     shortDesc: 'Tick columns to keep; unchecked columns are excluded',
     category: 'Columns',
     badge: 'Columns',
+    applyToSchema: applySelectColumnsToSchema,
     defaultConfig: (columns) => ({
       selectedColumns: columns && columns.length > 0 ? columns.map((c) => c.name) : [],
     }),
@@ -19,6 +65,7 @@ export const OPERATION_DEFINITIONS = [
     shortDesc: 'Remove duplicate rows based on selected comparison columns',
     category: 'Rows',
     badge: 'Deduplicate',
+    applyToSchema: preserveSchema,
     defaultConfig: (columns) => ({
       subset: columns && columns.length > 0 ? [columns[0].name] : [],
       keep: 'first', // 'first', 'last'
@@ -30,6 +77,7 @@ export const OPERATION_DEFINITIONS = [
     shortDesc: 'Drop rows or fill missing values with mean or custom value',
     category: 'Clean',
     badge: 'Missing',
+    applyToSchema: preserveSchema,
     defaultConfig: (columns) => ({
       rules: [
         {
@@ -46,6 +94,7 @@ export const OPERATION_DEFINITIONS = [
     shortDesc: 'Cast column types (integer, float, string, boolean)',
     category: 'Type',
     badge: 'Cast',
+    applyToSchema: applyCastTypeToSchema,
     defaultConfig: (columns) => ({
       conversions: [
         {
@@ -61,6 +110,7 @@ export const OPERATION_DEFINITIONS = [
     shortDesc: 'Trim whitespace and format letter case across string columns',
     category: 'String',
     badge: 'Text',
+    applyToSchema: preserveSchema,
     defaultConfig: (columns) => {
       const strCols = columns ? columns.filter((c) => c.type === 'string').map((c) => c.name) : [];
       return {
@@ -76,6 +126,7 @@ export const OPERATION_DEFINITIONS = [
     shortDesc: 'Filter rows by numeric comparison, flags, or text matching',
     category: 'Filter',
     badge: 'Filter',
+    applyToSchema: preserveSchema,
     defaultConfig: (columns) => ({
       conditions: [
         {
@@ -92,6 +143,7 @@ export const OPERATION_DEFINITIONS = [
     shortDesc: 'Search for target values and replace them with new values',
     category: 'Transform',
     badge: 'Replace',
+    applyToSchema: preserveSchema,
     defaultConfig: (columns) => ({
       column: columns && columns.length > 0 ? columns[0].name : '',
       oldValue: '',
@@ -104,6 +156,7 @@ export const OPERATION_DEFINITIONS = [
     shortDesc: 'Parse irregular date formats into standard output format',
     category: 'DateTime',
     badge: 'DateTime',
+    applyToSchema: applyDateTimeToSchema,
     defaultConfig: (columns) => {
       const dateCols = columns ? columns.filter((c) => c.type === 'datetime' || c.name.includes('date')).map((c) => c.name) : [];
       return {
@@ -121,46 +174,12 @@ let stepCounter = 1;
  * Creates a clean PipelineStep instance without any mock stats.
  * Type PipelineStep: { id, type, name, config, enabled }
  */
-export function applyToSchema(schema, step, stepIdx) {
-  // Similar logic as in src/lib/pipeline/schema.js
-  const newSchema = schema.map(col => ({ ...col }));
-  if (!step.enabled) return newSchema;
-  const { type, config } = step;
-  switch (type) {
-    case 'select_columns': {
-      const keepSet = new Set(config.selectedColumns || []);
-      return newSchema.map(col => {
-        if (!keepSet.has(col.name) && col.status !== 'dropped') {
-          return { ...col, status: 'dropped', droppedInStep: stepIdx + 1 };
-        }
-        return col;
-      });
-    }
-    case 'cast_type': {
-      const convMap = new Map();
-      (config.conversions || []).forEach(c => {
-        if (c.column && c.toType) convMap.set(c.column, c.toType);
-      });
-      return newSchema.map(col => {
-        if (convMap.has(col.name) && col.status !== 'dropped') {
-          return { ...col, type: convMap.get(col.name), status: 'changed', changedInStep: stepIdx + 1 };
-        }
-        return col;
-      });
-    }
-    case 'format_datetime': {
-      const target = config.column;
-      if (!target) return newSchema;
-      return newSchema.map(col => {
-        if (col.name === target && col.status !== 'dropped') {
-          return { ...col, type: 'datetime', status: 'changed', changedInStep: stepIdx + 1 };
-        }
-        return col;
-      });
-    }
-    default:
-      return newSchema;
-  }
+export function applyToSchema(schema, step, stepIdx = 0) {
+  if (!step.enabled) return cloneSchema(schema);
+  const operation = OPERATION_DEFINITIONS.find((item) => item.type === step.type);
+  return operation
+    ? operation.applyToSchema(schema, step.config || {}, stepIdx)
+    : cloneSchema(schema);
 }
 
 export function createStep(type, columns = []) {
@@ -185,10 +204,21 @@ export function getStepDescription(step) {
   const { type, config } = step;
 
   if (type === 'string_transform') {
-    const { columns = [], trim = false, caseMode = 'none' } = config;
-    if (!columns || columns.length === 0) {
-      return 'Not configured';
+    if (Array.isArray(config.rules)) {
+      const validRules = config.rules.filter((rule) => rule.column);
+      if (validRules.length === 0) return 'Not configured';
+      return validRules.map((rule) => {
+        const actions = [];
+        if (rule.trim) actions.push('Trim');
+        if (rule.caseMode === 'upper') actions.push('UPPERCASE');
+        else if (rule.caseMode === 'lower') actions.push('lowercase');
+        else if (rule.caseMode === 'title') actions.push('Title Case');
+        return `${actions.length ? actions.join(' + ') : 'No changes'} on ${rule.column}`;
+      }).join(', ');
     }
+
+    const { columns = [], trim = false, caseMode = 'none' } = config;
+    if (columns.length === 0) return 'Not configured';
 
     const actions = [];
     if (trim) actions.push('Trim');
@@ -245,7 +275,10 @@ export function getStepDescription(step) {
 
   if (type === 'filter_rows') {
     const conditions = config.conditions || (config.column ? [{ column: config.column, operator: config.operator, value: config.value }] : []);
-    const valid = conditions.filter((c) => c.column);
+    const valid = conditions.filter((condition) => (
+      condition.column
+      && (['is_true', 'is_false'].includes(condition.operator) || String(condition.value || '').length > 0)
+    ));
     if (valid.length === 0) return 'Not configured';
     return valid
       .map((c) => {
@@ -259,8 +292,8 @@ export function getStepDescription(step) {
 
   if (type === 'replace_value') {
     const { column, oldValue, newValue } = config;
-    if (!column) return 'Not configured';
-    return `In ${column}: replace "${oldValue || ''}" → "${newValue || ''}"`;
+    if (!column || !oldValue || !newValue) return 'Not configured';
+    return `In ${column}: replace "${oldValue}" → "${newValue}"`;
   }
 
   if (type === 'format_datetime') {
@@ -299,32 +332,6 @@ export function checkStepOrderHints(steps) {
     });
   }
 
-  // 3. Hint: Check if a subsequent step targets a column dropped earlier
-  const selectIndex = enabledSteps.findIndex((s) => s.type === 'select_columns');
-  if (selectIndex !== -1 && selectIndex < enabledSteps.length - 1) {
-    const selectStep = enabledSteps[selectIndex];
-    const keptCols = selectStep.config?.selectedColumns || [];
-    for (let i = selectIndex + 1; i < enabledSteps.length; i++) {
-      const nextStep = enabledSteps[i];
-      let targetCols = [];
-      if (nextStep.config?.columns) targetCols = nextStep.config.columns;
-      else if (nextStep.config?.column) targetCols = [nextStep.config.column];
-      else if (nextStep.config?.subset) targetCols = nextStep.config.subset;
-      else if (nextStep.config?.conversions) targetCols = nextStep.config.conversions.map((c) => c.column);
-      else if (nextStep.config?.conditions) targetCols = nextStep.config.conditions.map((c) => c.column);
-      else if (nextStep.config?.rules) targetCols = nextStep.config.rules.map((r) => r.column);
-
-      const missing = targetCols.filter((c) => c && !keptCols.includes(c));
-      if (missing.length > 0) {
-        hints.push({
-          id: `hint_col_dropped_${nextStep.id}`,
-          type: 'warning',
-          message: `Notice: Step "${nextStep.name}" (step ${i + 1}) operates on column(s) [${missing.join(', ')}] dropped in step ${selectIndex + 1}.`,
-        });
-      }
-    }
-  }
-
   return hints;
 }
 
@@ -340,7 +347,7 @@ export function simulatePipeline(dataset, steps, upToStepId = null) {
 
     const { type, config } = step;
 
-    if (type === 'select_columns' && config.selectedColumns && config.selectedColumns.length > 0) {
+    if (type === 'select_columns' && Array.isArray(config.selectedColumns)) {
       currentColumns = currentColumns.filter((c) => config.selectedColumns.includes(c.name));
       currentRows = currentRows.map((row) => {
         const newRow = {};
@@ -413,13 +420,18 @@ export function simulatePipeline(dataset, steps, upToStepId = null) {
         }
       }
     } else if (type === 'string_transform') {
-      const targetCols = config.columns || (config.column ? [config.column] : []);
-      const trim = Boolean(config.trim);
-      const caseMode = config.caseMode || 'none';
+      const rules = Array.isArray(config.rules)
+        ? config.rules
+        : (config.columns || (config.column ? [config.column] : [])).map((column) => ({
+          column,
+          trim: config.trim,
+          caseMode: config.caseMode,
+        }));
 
       currentRows = currentRows.map((r) => {
         const updated = { ...r };
-        for (const col of targetCols) {
+        for (const rule of rules) {
+          const { column: col, trim, caseMode = 'none' } = rule;
           let val = updated[col];
           if (typeof val === 'string') {
             if (trim) {
@@ -507,4 +519,3 @@ export function simulatePipeline(dataset, steps, upToStepId = null) {
     rows: currentRows,
   };
 }
-export { applyToSchema };

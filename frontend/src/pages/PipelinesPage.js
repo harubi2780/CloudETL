@@ -1,20 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { SAMPLE_DATASET } from '../lib/mock/datasets';
-import { createStep, simulatePipeline } from '../lib/mock/pipelineDefaults';
+import { checkStepOrderHints, createStep, simulatePipeline } from '../lib/mock/pipelineDefaults';
 import OperationsPalette from '../components/pipeline/OperationsPalette';
 import StepsList from '../components/pipeline/StepsList';
+import ColumnsPanel from '../components/pipeline/ColumnsPanel';
 import StepConfigPanel from '../components/pipeline/StepConfigPanel';
 import DataPreviewTable from '../components/pipeline/DataPreviewTable';
-import { computeSchemaAtStep, getWarningsForStep } from '../lib/pipeline/schema';
+import { computeSchemaAtStep, getActiveColumns, getWarningsForStep } from '../lib/pipeline/schema';
 import { applyToSchema } from '../lib/mock/pipelineDefaults';
 
 
 
 export default function PipelinesPage() {
   const [pipelineName, setPipelineName] = useState('Data Cleaning Pipeline');
-  const [dataset] = useState(SAMPLE_DATASET);
+  const [selectedDataset] = useState(SAMPLE_DATASET);
   const [activeStepId, setActiveStepId] = useState('step-init-1');
   const [notification, setNotification] = useState(null);
+  const [dismissedWarning, setDismissedWarning] = useState(null);
 
   // Initial clean pipeline steps (no fake stats)
   const [steps, setSteps] = useState([
@@ -60,57 +62,107 @@ export default function PipelinesPage() {
   // Index of the active step for convenience
   const activeStepIndex = useMemo(() => steps.findIndex((s) => s.id === activeStepId), [steps, activeStepId]);
 
-  // Compute schema before the active step (used by ColumnPicker)
-  const schemaBeforeActiveStep = useMemo(() => {
-    if (!activeStepIndex || activeStepIndex < 0) return [];
-    const baseSchema = dataset.columns.map(col => ({ name: col.name, type: col.type }));
-    return computeSchemaAtStep(baseSchema, steps, activeStepIndex - 1);
-  }, [dataset.columns, steps, activeStepIndex]);
+  const baseSchema = useMemo(
+    () => selectedDataset.columns.map((column) => ({ name: column.name, type: column.type })),
+    [selectedDataset]
+  );
 
-  // Compute full schema after all steps (used for Columns panel)
-  const schemaAfterAllSteps = useMemo(() => {
-    const baseSchema = dataset.columns.map(col => ({ name: col.name, type: col.type }));
-    return computeSchemaAtStep(baseSchema, steps, steps.length - 1);
-  }, [dataset.columns, steps]);
+  // Compute schema before the active step (used by configuration controls).
+  const schemaBeforeActiveStep = useMemo(() => {
+    if (activeStepIndex < 0) return [];
+    return getActiveColumns(computeSchemaAtStep(baseSchema, steps, activeStepIndex - 1));
+  }, [baseSchema, steps, activeStepIndex]);
+
+  // Compute schema after the active step (used by the Columns panel).
+  const schemaAfterActiveStep = useMemo(() => {
+    const index = activeStepIndex < 0 ? steps.length - 1 : activeStepIndex;
+    return computeSchemaAtStep(baseSchema, steps, index);
+  }, [baseSchema, steps, activeStepIndex]);
 
   // Compute warnings for each step
   const stepWarnings = useMemo(() => {
     const warningsMap = {};
-    const baseSchema = dataset.columns.map(col => ({ name: col.name, type: col.type }));
     let schemaSoFar = baseSchema;
     steps.forEach((step, idx) => {
-      const warnings = getWarningsForStep(schemaSoFar, step);
+      const warnings = getWarningsForStep(schemaSoFar, step, idx);
       if (warnings.length) warningsMap[step.id] = warnings;
       // update schemaSoFar for next step
       schemaSoFar = applyToSchema(schemaSoFar, step, idx);
     });
     return warningsMap;
-  }, [dataset.columns, steps]);
+  }, [baseSchema, steps]);
+
+  const pipelineWarningText = useMemo(() => {
+    const warningsByGroup = new Map();
+    Object.values(stepWarnings).flat().forEach((warning) => {
+      const key = `${warning.type}:${warning.column}:${warning.previousStep}`;
+      if (!warningsByGroup.has(key)) warningsByGroup.set(key, { ...warning, steps: [] });
+      warningsByGroup.get(key).steps.push(warning.step);
+    });
+
+    const messages = Array.from(warningsByGroup.values()).map((warning) => {
+      const usedSteps = Array.from(new Set(warning.steps)).sort((a, b) => a - b);
+      const stepLabel = usedSteps.length === 1 ? 'step' : 'steps';
+      const usage = `${stepLabel} ${usedSteps.join(', ')}`;
+      if (warning.type === 'dropped') {
+        return `${warning.column} was dropped in step ${warning.previousStep} but is used in ${usage}`;
+      }
+      return `${warning.column} was changed in step ${warning.previousStep} but is used in ${usage}`;
+    });
+
+    checkStepOrderHints(steps).forEach((hint) => messages.push(hint.message));
+    return messages.join('. ');
+  }, [stepWarnings, steps]);
 
   const handleColumnClick = (colName) => {
     if (!activeStep) return;
     const { type, config } = activeStep;
-    let newConfig = { ...config };
+    const newConfig = { ...config };
+    const toggleColumn = (columns = []) => (
+      columns.includes(colName)
+        ? columns.filter((column) => column !== colName)
+        : [...columns, colName]
+    );
+
     switch (type) {
       case 'select_columns':
-        // toggle column in selectedColumns array
-        const sel = new Set(newConfig.selectedColumns || []);
-        if (sel.has(colName)) sel.delete(colName); else sel.add(colName);
-        newConfig.selectedColumns = Array.from(sel);
+        newConfig.selectedColumns = toggleColumn(config.selectedColumns);
+        break;
+      case 'drop_duplicates':
+        newConfig.subset = toggleColumn(config.subset);
+        break;
+      case 'string_transform':
+        if (Array.isArray(config.rules)) {
+          newConfig.rules = config.rules.some((rule) => rule.column === colName)
+            ? config.rules.filter((rule) => rule.column !== colName)
+            : [...config.rules, { column: colName, trim: true, caseMode: 'title' }];
+        } else {
+          newConfig.columns = toggleColumn(config.columns);
+        }
         break;
       case 'cast_type':
-        // add or update conversion for this column to a default type (string)
-        const convs = newConfig.conversions || [];
-        const existing = convs.find(c => c.column === colName);
-        if (existing) {
-          existing.toType = existing.toType === 'string' ? 'integer' : 'string';
-        } else {
-          convs.push({ column: colName, toType: 'string' });
-        }
-        newConfig.conversions = convs;
+        newConfig.conversions = (config.conversions || []).some((conversion) => conversion.column === colName)
+          ? config.conversions.filter((conversion) => conversion.column !== colName)
+          : [...(config.conversions || []), { column: colName, toType: 'string' }];
         break;
       case 'format_datetime':
-        newConfig.column = colName;
+      case 'replace_value':
+        newConfig.column = config.column === colName ? '' : colName;
+        break;
+      case 'handle_null':
+        if (Array.isArray(config.rules)) {
+          newConfig.rules = config.rules.some((rule) => rule.column === colName)
+            ? config.rules.filter((rule) => rule.column !== colName)
+            : [...config.rules, { column: colName, strategy: 'drop_row', customValue: '' }];
+        } else {
+          newConfig.columns = toggleColumn(config.columns || (config.column ? [config.column] : []));
+          delete newConfig.column;
+        }
+        break;
+      case 'filter_rows':
+        newConfig.conditions = (config.conditions || []).some((condition) => condition.column === colName)
+          ? config.conditions.filter((condition) => condition.column !== colName)
+          : [...(config.conditions || []), { column: colName, operator: 'equals', value: '' }];
         break;
       default:
         // other steps ignore column clicks
@@ -122,7 +174,7 @@ export default function PipelinesPage() {
 
 
   const handleAddStep = (type, cols) => {
-    const newStep = createStep(type, cols || dataset.columns);
+    const newStep = createStep(type, cols || selectedDataset.columns);
     setSteps((prev) => [...prev, newStep]);
     setActiveStepId(newStep.id);
     showNotice(`Added step "${newStep.name}" to pipeline.`, 'success');
@@ -177,7 +229,7 @@ export default function PipelinesPage() {
   const handleSave = () => {
     const pipelinePayload = {
       name: pipelineName,
-      datasetId: dataset.id,
+      datasetId: selectedDataset.id,
       steps: steps.map(({ id, type, name, config, enabled }) => ({
         id,
         type,
@@ -193,14 +245,14 @@ export default function PipelinesPage() {
 
   const beforePreview = useMemo(() => {
     return {
-      columns: dataset.columns,
-      rows: dataset.beforeRows,
+      columns: selectedDataset.columns,
+      rows: selectedDataset.beforeRows,
     };
-  }, [dataset]);
+  }, [selectedDataset]);
 
   const afterPreview = useMemo(() => {
-    return simulatePipeline(dataset, steps, activeStepId);
-  }, [dataset, steps, activeStepId]);
+    return simulatePipeline(selectedDataset, steps, activeStepId);
+  }, [selectedDataset, steps, activeStepId]);
 
   return (
     <div className="pipeline-builder-page">
@@ -242,15 +294,13 @@ export default function PipelinesPage() {
         </div>
       )}
 
-      {/* 3-Column Layout */}
+      {/* Pipeline workbench */}
       <section className="pipeline-columns-grid">
-        {/* Column 1: Operations */}
         <OperationsPalette
           onAddStep={handleAddStep}
-          columns={dataset.columns}
+          columns={selectedDataset.columns}
         />
 
-        {/* Column 2: Selected Steps */}
         <StepsList
           steps={steps}
           activeStepId={activeStepId}
@@ -259,13 +309,22 @@ export default function PipelinesPage() {
           onRemoveStep={handleRemoveStep}
           onReorderSteps={handleReorderSteps}
           onMoveStep={handleMoveStep}
+          stepWarnings={stepWarnings}
+          warningMessage={pipelineWarningText !== dismissedWarning ? pipelineWarningText : ''}
+          onDismissWarning={() => setDismissedWarning(pipelineWarningText)}
         />
 
-        {/* Column 3: Step Configuration */}
+        <ColumnsPanel
+          columns={schemaAfterActiveStep}
+          onColumnClick={handleColumnClick}
+        />
+
         <StepConfigPanel
           step={activeStep}
           stepIndex={activeStepIndex}
-          columns={dataset.columns}
+          columns={schemaBeforeActiveStep}
+          schemaAfterActiveStep={schemaAfterActiveStep}
+          onColumnClick={handleColumnClick}
           onUpdateConfig={handleUpdateConfig}
           onToggleStep={handleToggleStep}
         />
@@ -274,7 +333,7 @@ export default function PipelinesPage() {
       {/* Bottom Sample Preview Section */}
       <section className="pipeline-preview-section">
         <DataPreviewTable
-          dataset={dataset}
+          dataset={selectedDataset}
           beforeData={beforePreview}
           afterData={afterPreview}
           activeStep={activeStep}

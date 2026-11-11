@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { checkStepOrderHints, getStepDescription } from '../../lib/mock/pipelineDefaults';
+import { getStepDescription } from '../../lib/mock/pipelineDefaults';
 
 export default function StepsList({
   steps,
@@ -9,9 +9,11 @@ export default function StepsList({
   onRemoveStep,
   onReorderSteps,
   onMoveStep,
+  stepWarnings = {},
+  warningMessage = '',
+  onDismissWarning,
 }) {
   const [draggedIndex, setDraggedIndex] = useState(null);
-  const hints = checkStepOrderHints(steps);
 
   const handleDragStart = (e, index) => {
     setDraggedIndex(index);
@@ -41,14 +43,11 @@ export default function StepsList({
         </span>
       </div>
 
-      {hints.length > 0 && (
-        <div className="pipeline-hints-container" role="status">
-          {hints.map((hint) => (
-            <div key={hint.id} className={`pipeline-hint-item ${hint.type}`}>
-              <span className="hint-icon">💡</span>
-              <p className="hint-text">{hint.message}</p>
-            </div>
-          ))}
+      {warningMessage && (
+        <div className="pipeline-warnings-banner" role="status">
+          <span className="warning-banner-icon" aria-hidden="true">⚠</span>
+          <p>{warningMessage}</p>
+          <button type="button" onClick={onDismissWarning} aria-label="Dismiss pipeline warning">×</button>
         </div>
       )}
 
@@ -65,6 +64,7 @@ export default function StepsList({
             const isFirst = index === 0;
             const isLast = index === steps.length - 1;
             const dynamicDesc = getStepDescription(step);
+            const warnings = stepWarnings[step.id] || [];
 
             return (
               <div
@@ -87,7 +87,20 @@ export default function StepsList({
 
                 <div className="step-card-main">
                   <div className="step-header-row">
-                    <strong className="step-name">{step.name}</strong>
+                    <span className="step-title-group">
+                      <strong className="step-name">{step.name}</strong>
+                      {warnings.length > 0 && (
+                        <span
+                          className="step-warning-icon"
+                          title={warnings.map((warning) => (
+                            `${warning.column} ${warning.type} in step ${warning.previousStep}`
+                          )).join('; ')}
+                          aria-label="This step has a column warning"
+                        >
+                          ⚠
+                        </span>
+                      )}
+                    </span>
                     <label
                       className="step-toggle"
                       onClick={(e) => e.stopPropagation()}

@@ -5,74 +5,7 @@
 //   status defaults to "active".
 // The functions do not depend on any React state and are safe to import from any component.
 
-/**
- * Apply a single step that mutates the schema.
- * Only steps that affect column presence or type are handled here.
- * Other steps are ignored (they do not modify the schema).
- */
-function applyStepToSchema(schema, step, stepIdx) {
-  // Work on a shallow copy of each column object to keep immutability.
-  const newSchema = schema.map(col => ({ ...col }));
-
-  if (!step.enabled) return newSchema;
-
-  const { type, config } = step;
-
-  switch (type) {
-    case 'select_columns': {
-      // config.selectedColumns is an array of column names to keep.
-      const keepSet = new Set(config.selectedColumns || []);
-      return newSchema.map(col => {
-        if (!keepSet.has(col.name) && col.status !== 'dropped') {
-          // Mark as dropped.
-          return {
-            ...col,
-            status: 'dropped',
-            droppedInStep: stepIdx + 1, // human‑friendly step number (1‑based)
-          };
-        }
-        return col;
-      });
-    }
-    case 'cast_type': {
-      // config.conversions is [{ column, toType }]
-      const convMap = new Map();
-      (config.conversions || []).forEach(c => {
-        if (c.column && c.toType) convMap.set(c.column, c.toType);
-      });
-      return newSchema.map(col => {
-        if (convMap.has(col.name) && col.status !== 'dropped') {
-          return {
-            ...col,
-            type: convMap.get(col.name),
-            status: 'changed',
-            changedInStep: stepIdx + 1,
-          };
-        }
-        return col;
-      });
-    }
-    case 'format_datetime': {
-      // config.column is the target column name (or inferred by default).
-      const target = config.column;
-      if (!target) return newSchema;
-      return newSchema.map(col => {
-        if (col.name === target && col.status !== 'dropped') {
-          return {
-            ...col,
-            type: 'datetime',
-            status: 'changed',
-            changedInStep: stepIdx + 1,
-          };
-        }
-        return col;
-      });
-    }
-    // Other step types (e.g., handle_null, drop_duplicates, filter_rows, replace_value, string_transform) do not affect the column list.
-    default:
-      return newSchema;
-  }
-}
+import { applyToSchema } from '../mock/pipelineDefaults';
 
 /**
  * Compute the column schema after applying steps up to and including `stepIndex`.
@@ -91,9 +24,10 @@ export function computeSchemaAtStep(baseSchema, steps, stepIndex) {
     status: 'active',
   }));
 
-  const limit = Math.min(stepIndex, steps.length - 1);
+  const pipelineSteps = Array.isArray(steps) ? steps : [];
+  const limit = Math.min(stepIndex, pipelineSteps.length - 1);
   for (let i = 0; i <= limit; i++) {
-    schema = applyStepToSchema(schema, steps[i], i);
+    schema = applyToSchema(schema, pipelineSteps[i], i);
   }
   return schema;
 }
@@ -106,50 +40,61 @@ export function getActiveColumns(schema) {
 }
 
 /**
- * Generate warnings for a step based on the schema that will be presented to the user.
- * For now we only warn when a step references a column that has been dropped or changed
- * in a previous step. The UI can decide how to render the warning.
+ * Report references to columns that were dropped or changed by earlier steps.
  */
-export function getWarningsForStep(schemaBeforeStep, step) {
-  const warnings = [];
-  if (!step.enabled) return warnings;
-  const { type, config } = step;
-  // Helper to test a column name against the schema.
-  const findCol = name => schemaBeforeStep.find(c => c.name === name);
+export function getWarningsForStep(schemaBeforeStep, step, stepIndex = 0) {
+  if (!step.enabled) return [];
 
-  switch (type) {
-    case 'cast_type': {
-      (config.conversions || []).forEach(c => {
-        const col = findCol(c.column);
-        if (!col) return; // column does not exist – UI already handles.
-        if (col.status === 'dropped') {
-          warnings.push(`${c.column} was dropped earlier`);
-        } else if (col.status === 'changed' && col.changedInStep < (step.changedInStep || 0)) {
-          warnings.push(`${c.column} was already changed in step ${col.changedInStep}`);
-        }
+  const config = step.config || {};
+  const columnNames = (columns) => (Array.isArray(columns) ? columns : []).filter(Boolean);
+  const references = {
+    select_columns: columnNames(config.selectedColumns),
+    drop_duplicates: columnNames(config.subset),
+    handle_null: Array.isArray(config.rules)
+      ? config.rules.map((rule) => rule.column)
+      : columnNames(config.columns || (config.column ? [config.column] : [])),
+    cast_type: Array.isArray(config.conversions)
+      ? config.conversions.map((conversion) => conversion.column)
+      : [config.column],
+    string_transform: Array.isArray(config.rules)
+      ? config.rules.map((rule) => rule.column)
+      : columnNames(config.columns || (config.column ? [config.column] : [])),
+    filter_rows: Array.isArray(config.conditions)
+      ? config.conditions.map((condition) => condition.column)
+      : [config.column],
+    replace_value: [config.column],
+    format_datetime: [config.column],
+  }[step.type] || [];
+
+  const warnings = new Map();
+  columnNames(references).forEach((columnName) => {
+    const column = schemaBeforeStep.find((item) => item.name === columnName);
+    if (!column) return;
+
+    if (column.status === 'dropped') {
+      warnings.set(columnName, {
+        type: 'dropped',
+        column: columnName,
+        previousStep: column.droppedInStep,
+        step: stepIndex + 1,
       });
-      break;
+    } else if (column.status === 'changed' && column.changedInStep < stepIndex + 1) {
+      warnings.set(columnName, {
+        type: 'changed',
+        column: columnName,
+        previousStep: column.changedInStep,
+        step: stepIndex + 1,
+      });
     }
-    case 'format_datetime': {
-      const target = config.column;
-      const col = findCol(target);
-      if (col) {
-        if (col.status === 'dropped') warnings.push(`${target} was dropped earlier`);
-        else if (col.status === 'changed' && col.changedInStep < (step.changedInStep || 0)) {
-          warnings.push(`${target} was already changed in step ${col.changedInStep}`);
-        }
-      }
-      break;
-    }
-    // Add other step types as needed.
-    default:
-      break;
-  }
-  return warnings;
+  });
+
+  return Array.from(warnings.values());
 }
 
-export default {
+const schemaHelpers = {
   computeSchemaAtStep,
   getActiveColumns,
   getWarningsForStep,
 };
+
+export default schemaHelpers;

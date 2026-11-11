@@ -45,12 +45,6 @@ export default function DataPreviewTable({
           </div>
         </div>
 
-        <div className="preview-toolbar-right">
-          <span className="preview-meta-pill">
-            <strong>{currentColumns.length}</strong> column{currentColumns.length !== 1 ? 's' : ''}
-          </span>
-          <span className="preview-hint">Showing {currentRows.length} sample rows</span>
-        </div>
       </div>
 
       <div className="preview-notice-banner">

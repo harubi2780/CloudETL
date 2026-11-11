@@ -8,49 +8,48 @@ export default function ColumnPicker({
   columns = [],
   selectedColumns = [],
   onChange,
-  filterType = null, // e.g. 'string' or ['string', 'text']
+  filterType = null,
+  allowedTypes = filterType,
   label = 'Target Columns',
   helperText = '',
 }) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filter columns by type if specified
   const eligibleColumns = useMemo(() => {
     return columns.filter((col) => {
-      if (!filterType) return true;
-      if (Array.isArray(filterType)) return filterType.includes(col.type);
-      return col.type === filterType;
+      if (col.status === 'dropped') return false;
+      if (!allowedTypes) return true;
+      if (Array.isArray(allowedTypes)) return allowedTypes.includes(col.type);
+      return col.type === allowedTypes;
     });
-  }, [columns, filterType]);
+  }, [columns, allowedTypes]);
 
-  // Filter columns by search query (case-insensitive)
   const visibleColumns = useMemo(() => {
     if (!searchQuery.trim()) return eligibleColumns;
     const q = searchQuery.toLowerCase().trim();
     return eligibleColumns.filter((col) => col.name.toLowerCase().includes(q));
   }, [eligibleColumns, searchQuery]);
 
-  // Toggle single column
   const handleToggle = (colName) => {
+    if (!eligibleColumns.some((column) => column.name === colName)) return;
     const next = selectedColumns.includes(colName)
       ? selectedColumns.filter((c) => c !== colName)
       : [...selectedColumns, colName];
     onChange(next);
   };
 
-  // Select all currently visible filtered columns
   const handleSelectAllVisible = () => {
     const visibleNames = visibleColumns.map((c) => c.name);
     const combined = Array.from(new Set([...selectedColumns, ...visibleNames]));
     onChange(combined);
   };
 
-  // Clear currently visible filtered columns
   const handleClearVisible = () => {
     const visibleNames = new Set(visibleColumns.map((c) => c.name));
     const remaining = selectedColumns.filter((c) => !visibleNames.has(c));
     onChange(remaining);
   };
+  const selectedVisibleCount = visibleColumns.filter((column) => selectedColumns.includes(column.name)).length;
 
   return (
     <div className="column-picker-container">
@@ -70,7 +69,7 @@ export default function ColumnPicker({
             type="button"
             className="text-btn"
             onClick={handleClearVisible}
-            disabled={selectedColumns.length === 0}
+            disabled={selectedVisibleCount === 0}
           >
             Clear
           </button>
@@ -79,7 +78,6 @@ export default function ColumnPicker({
 
       {helperText && <p className="config-help">{helperText}</p>}
 
-      {/* Search Input */}
       <div className="column-picker-search-box">
         <input
           type="text"
@@ -100,7 +98,6 @@ export default function ColumnPicker({
         )}
       </div>
 
-      {/* Checkbox List */}
       <div className="columns-checkbox-list">
         {visibleColumns.length === 0 ? (
           <div className="columns-empty-match">
@@ -127,7 +124,6 @@ export default function ColumnPicker({
         )}
       </div>
 
-      {/* Selection count note */}
       <div className="config-summary-note">
         Selected <strong>{selectedColumns.length}</strong> of {eligibleColumns.length} column{eligibleColumns.length !== 1 ? 's' : ''}
       </div>
@@ -152,6 +148,7 @@ export function SearchableColumnSelect({
 
   const eligibleColumns = useMemo(() => {
     return columns.filter((col) => {
+      if (col.status === 'dropped') return false;
       if (!filterType) return true;
       if (Array.isArray(filterType)) return filterType.includes(col.type);
       return col.type === filterType;

@@ -11,7 +11,11 @@ import { SearchableColumnSelect } from '../ColumnPicker';
  * }
  */
 export default function StringTransformConfig({ config, onChange, columns }) {
-  const rules = config.rules || [];
+  const rules = config.rules || (config.columns || []).map((column) => ({
+    column,
+    trim: Boolean(config.trim),
+    caseMode: config.caseMode || 'none',
+  }));
 
   const handleUpdateRule = (index, field, value) => {
     const newRules = rules.map((r, i) => (i === index ? { ...r, [field]: value } : r));
@@ -46,8 +50,6 @@ export default function StringTransformConfig({ config, onChange, columns }) {
           </div>
         ) : (
           rules.map((rule, idx) => {
-            const colObj = columns.find((c) => c.name === rule.column);
-            const isString = colObj && colObj.type === 'string';
             return (
               <div key={idx} className="multi-row-card null-rule-card">
                 {/* Column Selector */}

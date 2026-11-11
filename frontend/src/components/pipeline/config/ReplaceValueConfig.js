@@ -2,7 +2,7 @@ import React from 'react';
 import { SearchableColumnSelect } from '../ColumnPicker';
 
 export default function ReplaceValueConfig({ config, onChange, columns }) {
-  const currentColumn = config.column || (columns[0] ? columns[0].name : '');
+  const currentColumn = config.column || '';
   const oldValue = config.oldValue || '';
   const newValue = config.newValue || '';
 
