@@ -54,7 +54,7 @@ export default function ColumnPicker({
   return (
     <div className="column-picker-container">
       <div className="config-field-header">
-        <label className="config-label">{label}:</label>
+        {label && <label className="config-label">{label}:</label>}
         <div className="config-quick-actions">
           <button
             type="button"
@@ -140,6 +140,7 @@ export function SearchableColumnSelect({
   value = '',
   onChange,
   filterType = null,
+  disabledColumns = [],
   placeholder = 'Select column...',
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -162,6 +163,7 @@ export function SearchableColumnSelect({
   }, [eligibleColumns, search]);
 
   const selectedCol = eligibleColumns.find((c) => c.name === value);
+  const disabledNames = new Set(disabledColumns.filter((columnName) => columnName !== value));
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -215,6 +217,8 @@ export function SearchableColumnSelect({
                   key={col.name}
                   type="button"
                   className={`menu-option-item ${col.name === value ? 'selected' : ''}`}
+                  disabled={disabledNames.has(col.name)}
+                  title={disabledNames.has(col.name) ? 'Already configured in another rule' : undefined}
                   onClick={() => {
                     onChange(col.name);
                     setIsOpen(false);

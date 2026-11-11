@@ -3,6 +3,7 @@ import { getStepDescription } from '../../lib/mock/pipelineDefaults';
 
 export default function StepsList({
   steps,
+  columns = [],
   activeStepId,
   onSelectStep,
   onToggleStep,
@@ -63,7 +64,7 @@ export default function StepsList({
             const isActive = step.id === activeStepId;
             const isFirst = index === 0;
             const isLast = index === steps.length - 1;
-            const dynamicDesc = getStepDescription(step);
+            const dynamicDesc = getStepDescription(step, columns);
             const warnings = stepWarnings[step.id] || [];
 
             return (

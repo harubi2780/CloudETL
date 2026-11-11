@@ -67,8 +67,12 @@ export const OPERATION_DEFINITIONS = [
     badge: 'Deduplicate',
     applyToSchema: preserveSchema,
     defaultConfig: (columns) => ({
-      subset: columns && columns.length > 0 ? [columns[0].name] : [],
-      keep: 'first', // 'first', 'last'
+      rules: [{
+        allColumns: false,
+        columns: columns && columns.length > 0 ? [columns[0].name] : [],
+        keep: 'first',
+        orderBy: '',
+      }],
     }),
   },
   {
@@ -82,7 +86,7 @@ export const OPERATION_DEFINITIONS = [
       rules: [
         {
           column: columns && columns.length > 0 ? columns[0].name : '',
-          strategy: 'drop_row', // 'drop_row', 'fill_mean', 'fill_custom'
+          strategy: 'drop',
           customValue: '',
         },
       ],
@@ -199,7 +203,7 @@ export function createStep(type, columns = []) {
  * Auto-generates a dynamic description strictly from the step's config.
  * When unconfigured or incomplete, returns "Not configured".
  */
-export function getStepDescription(step) {
+export function getStepDescription(step, columns = []) {
   if (!step || !step.config) return 'Not configured';
   const { type, config } = step;
 
@@ -237,33 +241,62 @@ export function getStepDescription(step) {
   }
 
   if (type === 'drop_duplicates') {
-    const subset = config.subset || [];
-    if (subset.length === 0) return 'Not configured';
-    return `Remove duplicates by ${subset.join(', ')} (keep ${config.keep || 'first'})`;
+    const rules = Array.isArray(config.rules)
+      ? config.rules
+      : [{
+        allColumns: false,
+        columns: config.subset || [],
+        keep: config.keep || 'first',
+      }];
+    const descriptions = rules.filter((rule) => (
+      rule.allColumns || (Array.isArray(rule.columns) && rule.columns.length > 0)
+    )).map((rule) => {
+      const keys = rule.allColumns ? 'all columns' : rule.columns.join(', ');
+      if (rule.keep === 'min' && rule.orderBy) {
+        return `${keys} (keep smallest ${rule.orderBy})`;
+      }
+      if (rule.keep === 'max' && rule.orderBy) {
+        const orderColumn = columns.find((column) => column.name === rule.orderBy);
+        const latest = orderColumn?.type === 'datetime';
+        return `${keys} (keep ${latest ? 'latest' : 'largest'} ${rule.orderBy})`;
+      }
+      if (['min', 'max'].includes(rule.keep)) return null;
+      return `${keys} (keep ${rule.keep === 'last' ? 'last' : 'first'})`;
+    }).filter(Boolean);
+    return descriptions.length > 0 ? `Dedupe by ${descriptions.join('; ')}` : 'Not configured';
   }
 
   if (type === 'handle_null') {
-    const rules = config.rules || [];
+    const rules = Array.isArray(config.rules)
+      ? config.rules
+      : (config.column ? [{
+        column: config.column,
+        strategy: config.strategy,
+        customValue: config.customValue,
+      }] : []);
     if (rules.length > 0) {
-      const validRules = rules.filter((r) => r.column);
+      const validRules = rules.filter((rule) => (
+        rule.column
+        && (
+          (rule.strategy !== 'custom' && rule.strategy !== 'fill_custom')
+          || String(rule.customValue || '').length > 0
+        )
+      ));
       if (validRules.length === 0) return 'Not configured';
       return validRules
-        .map((r) => {
-          if (r.strategy === 'drop_row') return `${r.column} (drop)`;
-          if (r.strategy === 'fill_mean') return `${r.column} (mean)`;
-          if (r.strategy === 'fill_custom') return `${r.column} ("${r.customValue || 'N/A'}")`;
-          return `${r.column}`;
+        .map((rule) => {
+          const strategy = ({ drop_row: 'drop', fill_mean: 'mean', fill_custom: 'custom' })[rule.strategy] || rule.strategy;
+          if (strategy === 'drop') return `${rule.column} (drop row)`;
+          if (strategy === 'mean') return `${rule.column} (mean)`;
+          if (strategy === 'median') return `${rule.column} (median)`;
+          if (strategy === 'mode') return `${rule.column} (most frequent)`;
+          if (strategy === 'custom') return `${rule.column} ('${rule.customValue}')`;
+          return null;
         })
+        .filter(Boolean)
         .join(', ');
     }
-    const { strategy, customValue } = config;
-    const targetCols = config.columns || (config.column ? [config.column] : []);
-    if (!targetCols || targetCols.length === 0) return 'Not configured';
-    const colText = targetCols.join(', ');
-    if (strategy === 'drop_row') return `Drop rows where ${colText} is NULL`;
-    if (strategy === 'fill_mean') return `Fill NULLs in ${colText} with mean`;
-    if (strategy === 'fill_custom') return `Fill NULLs in ${colText} with "${customValue || 'N/A'}"`;
-    return `Handle NULLs on ${colText}`;
+    return 'Not configured';
   }
 
   if (type === 'cast_type') {
@@ -357,36 +390,116 @@ export function simulatePipeline(dataset, steps, upToStepId = null) {
         return newRow;
       });
     } else if (type === 'drop_duplicates') {
-      const seen = new Set();
-      const subset = config.subset && config.subset.length > 0 ? config.subset : currentColumns.map((c) => c.name);
-      currentRows = currentRows.filter((r) => {
-        const key = subset.map((k) => String(r[k] ?? '').trim().toLowerCase()).join('___');
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      const rules = Array.isArray(config.rules)
+        ? config.rules
+        : [{
+          allColumns: !(config.subset && config.subset.length > 0),
+          columns: config.subset || [],
+          keep: config.keep || 'first',
+        }];
+
+      for (const rule of rules) {
+        const keyColumns = rule.allColumns
+          ? currentColumns.map((column) => column.name)
+          : (rule.columns || []);
+        if (keyColumns.length === 0) continue;
+
+        const groups = new Map();
+        currentRows.forEach((row, index) => {
+          const key = JSON.stringify(keyColumns.map((column) => (
+            String(row[column] ?? '').trim().toLowerCase()
+          )));
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push({ row, index });
+        });
+
+        const selectedRows = [];
+        for (const group of groups.values()) {
+          if (['min', 'max'].includes(rule.keep) && rule.orderBy) {
+            const orderColumn = currentColumns.find((column) => column.name === rule.orderBy);
+            const getOrderValue = ({ row }) => {
+              const value = row[rule.orderBy];
+              if (value === null || value === undefined || value === '') return Number.NaN;
+              return orderColumn?.type === 'datetime' ? Date.parse(value) : Number(value);
+            };
+            const validRows = group.filter((row) => Number.isFinite(getOrderValue(row)));
+            if (validRows.length === 0) {
+              selectedRows.push(group[0]);
+              continue;
+            }
+            const selected = validRows.reduce((best, row) => {
+              const currentValue = getOrderValue(row);
+              const bestValue = getOrderValue(best);
+              if (rule.keep === 'min' ? currentValue < bestValue : currentValue > bestValue) return row;
+              return best;
+            });
+            selectedRows.push(selected);
+          } else {
+            selectedRows.push(rule.keep === 'last' ? group[group.length - 1] : group[0]);
+          }
+        }
+        currentRows = selectedRows
+          .sort((left, right) => left.index - right.index)
+          .map(({ row }) => row);
+      }
     } else if (type === 'handle_null') {
-      const rules = config.rules || [];
+      const rules = Array.isArray(config.rules)
+        ? config.rules
+        : (config.column ? [{
+          column: config.column,
+          strategy: config.strategy,
+          customValue: config.customValue,
+        }] : []);
       if (rules.length > 0) {
         for (const rule of rules) {
-          const { column: col, strategy, customValue } = rule;
+          const { column: col, customValue } = rule;
+          const strategy = ({ drop_row: 'drop', fill_mean: 'mean', fill_custom: 'custom' })[rule.strategy] || rule.strategy;
           if (!col) continue;
-          if (strategy === 'drop_row') {
+          if (strategy === 'drop') {
             currentRows = currentRows.filter((r) => r[col] !== null && r[col] !== '' && r[col] !== undefined);
-          } else if (strategy === 'fill_mean') {
-            const numericValues = currentRows.map((r) => Number(r[col])).filter((v) => !isNaN(v) && v > 0);
-            const mean = numericValues.length
-              ? Math.round((numericValues.reduce((a, b) => a + b, 0) / numericValues.length) * 10) / 10
-              : 0;
+          } else if (['mean', 'median'].includes(strategy)) {
+            const numericValues = currentRows
+              .map((row) => Number(row[col]))
+              .filter(Number.isFinite)
+              .sort((a, b) => a - b);
+            const middle = Math.floor(numericValues.length / 2);
+            const fillValue = strategy === 'mean'
+              ? (numericValues.length
+                ? numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length
+                : 0)
+              : (numericValues.length
+                ? (numericValues.length % 2
+                  ? numericValues[middle]
+                  : (numericValues[middle - 1] + numericValues[middle]) / 2)
+                : 0);
             currentRows = currentRows.map((r) => ({
               ...r,
-              [col]: r[col] === null || r[col] === '' || r[col] === undefined ? mean : r[col],
+              [col]: r[col] === null || r[col] === '' || r[col] === undefined ? fillValue : r[col],
             }));
-          } else if (strategy === 'fill_custom') {
-            const fillVal = customValue !== undefined && customValue !== '' ? customValue : 'N/A';
+          } else if (strategy === 'mode') {
+            const frequencies = new Map();
+            currentRows.forEach((row) => {
+              const value = row[col];
+              if (value === null || value === undefined || value === '') return;
+              const key = String(value);
+              const entry = frequencies.get(key) || { value, count: 0 };
+              entry.count += 1;
+              frequencies.set(key, entry);
+            });
+            const mostFrequent = Array.from(frequencies.values())
+              .reduce((best, item) => (!best || item.count > best.count ? item : best), null)?.value;
             currentRows = currentRows.map((r) => ({
               ...r,
-              [col]: r[col] === null || r[col] === '' || r[col] === undefined ? fillVal : r[col],
+              [col]: r[col] === null || r[col] === '' || r[col] === undefined
+                ? (mostFrequent === undefined ? r[col] : mostFrequent)
+                : r[col],
+            }));
+          } else if (strategy === 'custom') {
+            currentRows = currentRows.map((r) => ({
+              ...r,
+              [col]: r[col] === null || r[col] === '' || r[col] === undefined
+                ? customValue
+                : r[col],
             }));
           }
         }

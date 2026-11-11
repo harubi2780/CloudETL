@@ -8,6 +8,7 @@ import StepConfigPanel from '../components/pipeline/StepConfigPanel';
 import DataPreviewTable from '../components/pipeline/DataPreviewTable';
 import { computeSchemaAtStep, getActiveColumns, getWarningsForStep } from '../lib/pipeline/schema';
 import { applyToSchema } from '../lib/mock/pipelineDefaults';
+import './PipelinesPage.css';
 
 
 
@@ -129,7 +130,18 @@ export default function PipelinesPage() {
         newConfig.selectedColumns = toggleColumn(config.selectedColumns);
         break;
       case 'drop_duplicates':
-        newConfig.subset = toggleColumn(config.subset);
+        {
+          const rules = Array.isArray(config.rules)
+            ? config.rules
+            : [{ allColumns: false, columns: config.subset || [], keep: config.keep || 'first' }];
+          const firstRule = rules[0] || { allColumns: false, columns: [], keep: 'first' };
+          newConfig.rules = [
+            { ...firstRule, allColumns: false, columns: toggleColumn(firstRule.columns || []) },
+            ...rules.slice(1),
+          ];
+          delete newConfig.subset;
+          delete newConfig.keep;
+        }
         break;
       case 'string_transform':
         if (Array.isArray(config.rules)) {
@@ -150,13 +162,24 @@ export default function PipelinesPage() {
         newConfig.column = config.column === colName ? '' : colName;
         break;
       case 'handle_null':
-        if (Array.isArray(config.rules)) {
-          newConfig.rules = config.rules.some((rule) => rule.column === colName)
-            ? config.rules.filter((rule) => rule.column !== colName)
-            : [...config.rules, { column: colName, strategy: 'drop_row', customValue: '' }];
-        } else {
-          newConfig.columns = toggleColumn(config.columns || (config.column ? [config.column] : []));
+        {
+          const rules = Array.isArray(config.rules)
+            ? config.rules
+            : (config.column ? [{
+              column: config.column,
+              strategy: config.strategy || 'drop',
+              customValue: config.customValue || '',
+            }] : []);
+          const hasColumn = rules.some((rule) => rule.column === colName);
+          const nextRules = hasColumn
+            ? rules.filter((rule) => rule.column !== colName)
+            : [...rules, { column: colName, strategy: 'drop', customValue: '' }];
+          newConfig.rules = nextRules.length
+            ? nextRules
+            : [{ column: '', strategy: 'drop', customValue: '' }];
           delete newConfig.column;
+          delete newConfig.strategy;
+          delete newConfig.customValue;
         }
         break;
       case 'filter_rows':
@@ -303,6 +326,7 @@ export default function PipelinesPage() {
 
         <StepsList
           steps={steps}
+          columns={schemaBeforeActiveStep}
           activeStepId={activeStepId}
           onSelectStep={setActiveStepId}
           onToggleStep={handleToggleStep}

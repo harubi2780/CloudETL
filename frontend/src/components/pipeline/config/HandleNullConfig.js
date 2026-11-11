@@ -1,164 +1,230 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { SearchableColumnSelect } from '../ColumnPicker';
 
-/**
- * Handle NULL - Multi-rule, per-column configuration.
- * Each column has its own customized strategy and default replacement value.
- * Config Structure:
- * {
- *   rules: [
- *     { column: string, strategy: "drop_row" | "fill_mean" | "fill_custom", customValue: string }
- *   ]
- * }
- */
-export default function HandleNullConfig({ config, onChange, columns }) {
-  const rules = config.rules || (config.column ? [{ column: config.column, strategy: config.strategy || 'drop_row', customValue: config.customValue || '' }] : []);
+const NUMERIC_TYPES = ['integer', 'float'];
+const NUMERIC_STRATEGIES = ['mean', 'median'];
+const STRATEGY_OPTIONS = [
+  { value: 'drop', label: 'Drop row' },
+  { value: 'mean', label: 'Fill with mean' },
+  { value: 'median', label: 'Fill with median' },
+  { value: 'mode', label: 'Fill with most frequent' },
+  { value: 'custom', label: 'Fill with custom value' },
+];
 
-  const handleUpdateRule = (index, field, val) => {
-    const next = rules.map((r, idx) => {
-      if (idx === index) {
-        return { ...r, [field]: val };
-      }
-      return r;
-    });
-    onChange({ ...config, rules: next });
+function normalizeStrategy(strategy) {
+  return ({
+    drop_row: 'drop',
+    fill_mean: 'mean',
+    fill_custom: 'custom',
+  })[strategy] || strategy || 'drop';
+}
+
+function getRules(config) {
+  if (Array.isArray(config.rules)) {
+    return config.rules.map((rule) => ({ ...rule, strategy: normalizeStrategy(rule.strategy) }));
+  }
+  const legacyRules = config.column
+    ? [{ column: config.column, strategy: config.strategy, customValue: config.customValue }]
+    : [];
+  return legacyRules.map((rule) => ({ ...rule, strategy: normalizeStrategy(rule.strategy) }));
+}
+
+export default function HandleNullConfig({ config, onChange, columns }) {
+  const [showApplyAll, setShowApplyAll] = useState(false);
+  const [applyAllStrategy, setApplyAllStrategy] = useState('drop');
+  const rules = getRules(config);
+
+  const updateRules = (nextRules) => {
+    const nextConfig = { ...config, rules: nextRules };
+    delete nextConfig.column;
+    delete nextConfig.strategy;
+    delete nextConfig.customValue;
+    onChange(nextConfig);
+  };
+
+  const updateRule = (index, updates) => {
+    updateRules(rules.map((rule, ruleIndex) => (
+      ruleIndex === index ? { ...rule, ...updates } : rule
+    )));
+  };
+
+  const configuredColumns = useMemo(
+    () => new Set(rules.map((rule) => rule.column).filter(Boolean)),
+    [rules]
+  );
+  const availableColumns = columns.filter((column) => !configuredColumns.has(column.name));
+
+  const handleColumnChange = (index, columnName) => {
+    const column = columns.find((item) => item.name === columnName);
+    const rule = rules[index];
+    const strategy = NUMERIC_STRATEGIES.includes(rule.strategy)
+      && !NUMERIC_TYPES.includes(column?.type)
+      ? 'drop'
+      : rule.strategy;
+    updateRule(index, { column: columnName, strategy });
   };
 
   const handleAddRule = () => {
-    // Pick first column not already configured if possible
-    const available = columns.find((c) => !rules.some((r) => r.column === c.name));
-    const nextCol = available ? available.name : (columns[0] ? columns[0].name : '');
-    onChange({
-      ...config,
-      rules: [
-        ...rules,
-        {
-          column: nextCol,
-          strategy: 'drop_row',
-          customValue: '',
-        },
-      ],
-    });
+    const nextColumn = availableColumns[0];
+    if (!nextColumn) return;
+    updateRules([...rules, { column: nextColumn.name, strategy: 'drop', customValue: '' }]);
   };
 
   const handleRemoveRule = (index) => {
-    const next = rules.filter((_, idx) => idx !== index);
-    onChange({ ...config, rules: next });
+    if (rules.length <= 1) return;
+    updateRules(rules.filter((_, ruleIndex) => ruleIndex !== index));
+  };
+
+  const applyStrategyToRemainingColumns = () => {
+    const targets = availableColumns.filter((column) => (
+      !NUMERIC_STRATEGIES.includes(applyAllStrategy) || NUMERIC_TYPES.includes(column.type)
+    ));
+    if (targets.length === 0) return;
+    updateRules([
+      ...rules,
+      ...targets.map((column) => ({
+        column: column.name,
+        strategy: applyAllStrategy,
+        ...(applyAllStrategy === 'custom' ? { customValue: '' } : {}),
+      })),
+    ]);
   };
 
   return (
-    <div className="config-form-section">
-      <div className="config-field-header">
-        <label className="config-label">Per-Column NULL Rules:</label>
-        <span className="config-help">Configure customized resolution for each column</span>
+    <div className="config-form-section handle-null-config">
+      <p className="config-help">
+        Choose how each column handles missing values. A column can only have one rule.
+      </p>
+
+      <div className="null-rule-table-header" aria-hidden="true">
+        <span>Column</span>
+        <span>Strategy</span>
+        <span>Value</span>
+        <span />
       </div>
 
-      <div className="multi-row-list" style={{ marginTop: 12 }}>
-        {rules.length === 0 ? (
-          <div className="multi-row-empty">
-            No column rules added yet. Click <strong>+ Add rule</strong> below to specify how each column handles missing values.
-          </div>
-        ) : (
-          rules.map((rule, idx) => {
-            const colObj = columns.find((c) => c.name === rule.column);
-            const isNumeric = colObj && (colObj.type === 'integer' || colObj.type === 'float');
-            const showCustomInput = rule.strategy === 'fill_custom';
+      <div className="null-rule-list">
+        {rules.map((rule, index) => {
+          const column = columns.find((item) => item.name === rule.column);
+          const isNumeric = NUMERIC_TYPES.includes(column?.type);
+          const disabledColumns = rules
+            .filter((_, ruleIndex) => ruleIndex !== index)
+            .map((item) => item.column)
+            .filter(Boolean);
 
-            return (
-              <div key={idx} className="multi-row-card null-rule-card">
-                {/* Column Search Dropdown */}
-                <div className="row-col-selector">
-                  <SearchableColumnSelect
-                    columns={columns}
-                    value={rule.column}
-                    onChange={(newCol) => handleUpdateRule(idx, 'column', newCol)}
-                    placeholder="Select column..."
-                  />
-                </div>
-
-                {/* Strategy Radio Buttons */}
-                <div className="row-op-selector" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <label className="radio-label">
-                    <input
-                      type="radio"
-                      name={`strategy_${idx}`}
-                      value="drop_row"
-                      checked={rule.strategy === 'drop_row'}
-                      onChange={(e) => handleUpdateRule(idx, 'strategy', e.target.value)}
-                    />
-                    Drop Row
-                  </label>
-                  <label className="radio-label">
-                    <input
-                      type="radio"
-                      name={`strategy_${idx}`}
-                      value="fill_mean"
-                      disabled={!isNumeric && Boolean(colObj)}
-                      checked={rule.strategy === 'fill_mean'}
-                      onChange={(e) => handleUpdateRule(idx, 'strategy', e.target.value)}
-                    />
-                    Fill Mean{(!isNumeric && Boolean(colObj)) ? ' (numeric only)' : ''}
-                  </label>
-                  <label className="radio-label">
-                    <input
-                      type="radio"
-                      name={`strategy_${idx}`}
-                      value="fill_custom"
-                      checked={rule.strategy === 'fill_custom'}
-                      onChange={(e) => handleUpdateRule(idx, 'strategy', e.target.value)}
-                    />
-                    Custom Value
-                  </label>
-                </div>
-                {/* Default value input for custom */}
-                {rule.strategy === 'fill_custom' ? (
-                  <div className="row-val-input" style={{ marginTop: '4px' }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. Unknown or 0"
-                      value={rule.customValue || ''}
-                      onChange={(e) => handleUpdateRule(idx, 'customValue', e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <div className="row-val-placeholder" style={{ marginTop: '4px' }}>
-                    <span className="flag-label">
-                      {rule.strategy === 'drop_row' ? 'Removes row' : 'Auto-computed'}
-                    </span>
-                  </div>
-                )
-                }
-
-                {/* Delete rule button */}
-
-                <button
-                  type="button"
-                  className="row-delete-btn"
-                  onClick={() => handleRemoveRule(idx)}
-                  title="Remove this rule"
-                >
-
-                </button>
+          return (
+            <div className="null-rule-row" key={`null-rule-${index}`}>
+              <div className="null-rule-column">
+                <SearchableColumnSelect
+                  columns={columns}
+                  value={rule.column || ''}
+                  disabledColumns={disabledColumns}
+                  onChange={(columnName) => handleColumnChange(index, columnName)}
+                  placeholder="Select column..."
+                />
               </div>
-            );
-          })
-        )}
+
+              <div className="null-rule-strategy">
+                <select
+                  className="form-select"
+                  aria-label={`Strategy for ${rule.column || `rule ${index + 1}`}`}
+                  value={rule.strategy}
+                  onChange={(event) => updateRule(index, { strategy: event.target.value })}
+                >
+                  {STRATEGY_OPTIONS.map((option) => {
+                    const requiresNumeric = NUMERIC_STRATEGIES.includes(option.value);
+                    return (
+                      <option
+                        key={option.value}
+                        value={option.value}
+                        disabled={requiresNumeric && !isNumeric}
+                        title={requiresNumeric && !isNumeric ? 'Numeric columns only' : undefined}
+                      >
+                        {option.label}{requiresNumeric && !isNumeric ? ' (numeric columns only)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="null-rule-value">
+                {rule.strategy === 'custom' ? (
+                  <input
+                    type="text"
+                    className="form-input"
+                    aria-label={`Custom value for ${rule.column || `rule ${index + 1}`}`}
+                    placeholder="Value"
+                    value={rule.customValue || ''}
+                    onChange={(event) => updateRule(index, { customValue: event.target.value })}
+                  />
+                ) : (
+                  <span className="null-rule-value-empty" aria-hidden="true" />
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="row-delete-btn"
+                onClick={() => handleRemoveRule(index)}
+                disabled={rules.length <= 1}
+                aria-label={`Remove rule for ${rule.column || `rule ${index + 1}`}`}
+                title={rules.length <= 1 ? 'At least one rule is required' : 'Remove rule'}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
       </div>
 
-      <div style={{ marginTop: 14 }}>
+      <div className="null-rule-actions">
         <button
           type="button"
           className="button button-secondary add-row-btn"
           onClick={handleAddRule}
+          disabled={availableColumns.length === 0}
         >
           + Add rule
         </button>
+        <button
+          type="button"
+          className="text-btn"
+          onClick={() => setShowApplyAll((visible) => !visible)}
+          disabled={availableColumns.length === 0}
+          aria-expanded={showApplyAll}
+        >
+          Apply one strategy to all columns
+        </button>
       </div>
 
-      <p className="config-help" style={{ marginTop: 12 }}>
-        Different columns can have different rules: critical keys (e.g. email) can drop the row, while metric columns (e.g. age) fill mean, and categorical columns fill defaults.
-      </p>
+      {showApplyAll && (
+        <div className="null-apply-all">
+          <label className="config-label" htmlFor="null-apply-all-strategy">Strategy</label>
+          <select
+            id="null-apply-all-strategy"
+            className="form-select"
+            value={applyAllStrategy}
+            onChange={(event) => setApplyAllStrategy(event.target.value)}
+          >
+            {STRATEGY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="button button-secondary add-row-btn"
+            onClick={applyStrategyToRemainingColumns}
+            disabled={!availableColumns.some((column) => (
+              !NUMERIC_STRATEGIES.includes(applyAllStrategy) || NUMERIC_TYPES.includes(column.type)
+            ))}
+          >
+            Apply
+          </button>
+          {NUMERIC_STRATEGIES.includes(applyAllStrategy) && (
+            <span className="config-help">Only remaining numeric columns will be added.</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

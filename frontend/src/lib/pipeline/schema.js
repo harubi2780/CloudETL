@@ -49,7 +49,11 @@ export function getWarningsForStep(schemaBeforeStep, step, stepIndex = 0) {
   const columnNames = (columns) => (Array.isArray(columns) ? columns : []).filter(Boolean);
   const references = {
     select_columns: columnNames(config.selectedColumns),
-    drop_duplicates: columnNames(config.subset),
+    drop_duplicates: Array.isArray(config.rules)
+      ? config.rules.flatMap((rule) => (
+        rule.allColumns ? schemaBeforeStep.map((column) => column.name) : columnNames(rule.columns)
+      ))
+      : columnNames(config.subset),
     handle_null: Array.isArray(config.rules)
       ? config.rules.map((rule) => rule.column)
       : columnNames(config.columns || (config.column ? [config.column] : [])),
