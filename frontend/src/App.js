@@ -8,6 +8,7 @@ import DashboardPage from './pages/DashboardPage';
 import DatasetsPage from './pages/DatasetsPage';
 import LandingPage from './pages/LandingPage';
 import NotFoundPage from './pages/NotFoundPage';
+import PipelinesPage from './pages/PipelinesPage';
 import WorkspacePage from './pages/WorkspacePage';
 import { findWorkspacePage, getReturnPath, normalizePath } from './routes';
 import './App.css';
@@ -80,6 +81,7 @@ function App() {
     <DashboardLayout user={session.user} page={page} onSignOut={session.signOut}>
       {pathname === '/dashboard' ? <DashboardPage user={session.user} />
         : pathname === '/dashboard/datasets' ? <DatasetsPage onSessionExpired={session.expire} />
+        : pathname === '/dashboard/pipelines' ? <PipelinesPage />
         : <WorkspacePage page={page} />}
     </DashboardLayout>
   );
