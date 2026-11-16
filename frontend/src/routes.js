@@ -1,5 +1,5 @@
 // Keep navigation and page metadata together. See docs/FRONTEND_HANDOFF.md before
-// adding ETL behavior. Dataset uploads are live; other ETL routes remain previews.
+// adding ETL behavior. Dynamic detail routes retain their parent navigation item.
 export const workspacePages = [
   { path: '/dashboard', label: 'Overview', title: 'Overview' },
   {
@@ -13,28 +13,18 @@ export const workspacePages = [
     label: 'Pipelines',
     title: 'Pipelines',
     description: 'Organize the steps that prepare your data.',
-    emptyTitle: 'Build a clear path for your data',
-    emptyDescription: 'Your saved transformation pipelines will appear here.',
-    action: 'Create pipeline',
-    availability: 'The pipeline builder is coming soon.',
   },
   {
     path: '/dashboard/runs',
     label: 'Runs',
     title: 'Runs',
     description: 'Follow pipeline execution from start to finish.',
-    emptyTitle: 'Keep track of every run',
-    emptyDescription: 'Run progress and execution history will appear here.',
-    availability: 'Pipeline execution is coming soon.',
   },
   {
     path: '/dashboard/results',
     label: 'Results',
     title: 'Results',
     description: 'Find the outputs of your completed workflows.',
-    emptyTitle: 'A place for your processed data',
-    emptyDescription: 'Your processed files will appear here after a pipeline finishes.',
-    availability: 'Result previews and downloads are coming soon.',
   },
 ];
 
@@ -43,11 +33,19 @@ export function normalizePath(path) {
 }
 
 export function findWorkspacePage(path) {
-  return workspacePages.find((page) => page.path === normalizePath(path));
+  const normalized = normalizePath(path);
+  const direct = workspacePages.find((page) => page.path === normalized);
+  if (direct) return direct;
+  const detail = normalized.match(/^\/dashboard\/(runs|results)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  if (!detail) return undefined;
+  return { ...workspacePages.find((page) => page.path === `/dashboard/${detail[1].toLowerCase()}`), runId: detail[2] };
 }
 
 export function getReturnPath(search) {
   const requested = new URLSearchParams(search).get('next');
   // Accept only registered workspace URLs, never an arbitrary redirect target.
-  return workspacePages.some((page) => page.path === requested) ? requested : '/dashboard';
+  if (typeof requested !== 'string' || !requested.startsWith('/dashboard') || requested.includes('\\') || /[\r\n]/.test(requested)) return '/dashboard';
+  const url = new URL(requested, 'https://cloudetl.invalid');
+  return url.origin === 'https://cloudetl.invalid' && findWorkspacePage(url.pathname)
+    ? url.pathname + url.search : '/dashboard';
 }

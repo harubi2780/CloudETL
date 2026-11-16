@@ -9,7 +9,10 @@ import DatasetsPage from './pages/DatasetsPage';
 import LandingPage from './pages/LandingPage';
 import NotFoundPage from './pages/NotFoundPage';
 import PipelinesPage from './pages/PipelinesPage';
-import WorkspacePage from './pages/WorkspacePage';
+import RunsPage from './pages/RunsPage';
+import RunDetailPage from './pages/RunDetailPage';
+import ResultsPage from './pages/ResultsPage';
+import ResultsDetailPage from './pages/ResultsDetailPage';
 import { findWorkspacePage, getReturnPath, normalizePath } from './routes';
 import './App.css';
 
@@ -76,13 +79,14 @@ function App() {
     );
   }
 
-  if (!session.user) return <Redirect to={`/login?next=${encodeURIComponent(pathname)}`} />;
+  if (!session.user) return <Redirect to={`/login?next=${encodeURIComponent(pathname + location.search)}`} />;
   return (
     <DashboardLayout user={session.user} page={page} onSignOut={session.signOut}>
       {pathname === '/dashboard' ? <DashboardPage user={session.user} />
         : pathname === '/dashboard/datasets' ? <DatasetsPage onSessionExpired={session.expire} />
-        : pathname === '/dashboard/pipelines' ? <PipelinesPage />
-        : <WorkspacePage page={page} />}
+        : pathname === '/dashboard/pipelines' ? <PipelinesPage key={location.search} search={location.search} onSessionExpired={session.expire} />
+        : page.path === '/dashboard/runs' ? page.runId ? <RunDetailPage key={page.runId} runId={page.runId} onSessionExpired={session.expire} /> : <RunsPage onSessionExpired={session.expire} />
+        : page.runId ? <ResultsDetailPage key={page.runId} runId={page.runId} onSessionExpired={session.expire} /> : <ResultsPage onSessionExpired={session.expire} />}
     </DashboardLayout>
   );
 }

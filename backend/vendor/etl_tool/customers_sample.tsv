@@ -1,0 +1,5 @@
+order_id	customer_phone	customer_tier
+ORD01	0901234567	VIP
+ORD02	0912345678	Standard
+ORD03	0987654321	VIP
+ORD04	0933445566	Standard

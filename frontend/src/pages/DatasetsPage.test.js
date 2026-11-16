@@ -2,6 +2,9 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import datasetsApi from '../api/datasets';
 import DatasetsPage from './DatasetsPage';
+import { navigate } from '../navigation';
+
+jest.mock('../navigation', () => ({ navigate: jest.fn() }));
 
 jest.mock('../api/datasets', () => ({
   __esModule: true,
@@ -343,4 +346,124 @@ test('notifies the session owner when a management request returns 401', async (
   await userEvent.click(await screen.findByRole('button', { name: 'Delete orders.csv' }));
   await userEvent.click(screen.getByRole('button', { name: 'Confirm deletion' }));
   await waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1));
+});
+
+test('retains pipeline sources across pages and uses saved dataset IDs', async () => {
+  const second = { ...dataset, id: 'source-2', filename: 'customers.tsv', format: 'tsv' };
+  datasetsApi.list.mockResolvedValueOnce(listResponse([dataset], { total_pages: 2, total_count: 2 }))
+    .mockResolvedValueOnce(listResponse([second], { page: 2, total_pages: 2, total_count: 2 }));
+  render(<DatasetsPage />);
+  expect(screen.getByRole('button', { name: 'Create pipeline' })).toBeDisabled();
+  await userEvent.click(await screen.findByRole('checkbox', { name: 'Select orders.csv for pipeline' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await userEvent.click(await screen.findByRole('checkbox', { name: 'Select customers.tsv for pipeline' }));
+  const selected = screen.getByRole('list', { name: 'Selected pipeline sources' });
+  expect(within(selected).getByText('orders.csv')).toBeInTheDocument();
+  expect(within(selected).getByText('customers.tsv')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Create pipeline' }));
+  expect(navigate).toHaveBeenCalledWith('/dashboard/pipelines?datasets=source-1,source-2');
+  await userEvent.click(within(selected).getByRole('button', { name: 'Deselect orders.csv' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Create pipeline' }));
+  expect(navigate).toHaveBeenLastCalledWith('/dashboard/pipelines?datasets=source-2');
+});
+
+test('marks non-CSV/TSV files as storage only and excludes them from selection', async () => {
+  const stored = { ...dataset, id: 'json-1', filename: 'people.json', format: 'json' };
+  datasetsApi.list.mockResolvedValue(listResponse([dataset, stored]));
+  render(<DatasetsPage />);
+  expect(await screen.findByRole('checkbox', { name: 'Select people.json for pipeline' })).toBeDisabled();
+  expect(screen.getByRole('cell', { name: 'Storage only' })).toBeInTheDocument();
+  expect(screen.getByRole('cell', { name: 'CSV' })).toBeInTheDocument();
+  expect(screen.getByRole('cell', { name: 'JSON' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Select orders.csv for pipeline' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Create pipeline' }));
+  expect(navigate).toHaveBeenCalledWith('/dashboard/pipelines?datasets=source-1');
+});
+
+test('enforces pipeline count and combined size limits without dropping selected files', async () => {
+  const sources = Array.from({ length: 7 }, (_, index) => ({ ...dataset, id: `source-${index}`, filename: `${index}.csv` }));
+  datasetsApi.list.mockResolvedValue(listResponse(sources));
+  render(<DatasetsPage />);
+  await screen.findByRole('checkbox', { name: 'Select 0.csv for pipeline' });
+  for (const source of sources) await userEvent.click(screen.getByRole('checkbox', { name: `Select ${source.filename} for pipeline` }));
+  expect(screen.getByRole('alert')).toHaveTextContent('up to 6 files');
+  expect(screen.getByRole('checkbox', { name: 'Select 6.csv for pipeline' })).not.toBeChecked();
+  expect(within(screen.getByRole('list', { name: 'Selected pipeline sources' })).getAllByRole('listitem')).toHaveLength(6);
+  await userEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+  expect(screen.getByRole('button', { name: 'Create pipeline' })).toBeDisabled();
+});
+
+test('rejects a selection larger than the combined pipeline input limit', async () => {
+  const first = { ...dataset, size_bytes: 20 * 1024 * 1024 };
+  const second = { ...dataset, id: 'source-2', filename: 'second.tsv', format: 'tsv', size_bytes: 10 * 1024 * 1024 };
+  datasetsApi.list.mockResolvedValue(listResponse([first, second]));
+  render(<DatasetsPage />);
+  await userEvent.click(await screen.findByRole('checkbox', { name: 'Select orders.csv for pipeline' }));
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Select second.tsv for pipeline' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('25 MB or smaller');
+  expect(screen.getByRole('checkbox', { name: 'Select second.tsv for pipeline' })).not.toBeChecked();
+  await userEvent.click(screen.getByRole('button', { name: 'Create pipeline' }));
+  expect(navigate).toHaveBeenCalledWith('/dashboard/pipelines?datasets=source-1');
+});
+
+test('retries only the failed upload and uses both successful returned dataset IDs', async () => {
+  const second = { ...dataset, id: 'source-2', filename: 'second.tsv', format: 'tsv' };
+  datasetsApi.upload.mockResolvedValueOnce({ dataset })
+    .mockRejectedValueOnce(new Error('Temporary upload failure.'))
+    .mockResolvedValueOnce({ dataset: second });
+  render(<DatasetsPage />);
+  await screen.findByText('No datasets yet');
+  const firstFile = new File(['id\n1'], 'orders.csv');
+  const secondFile = new File(['id\n2'], 'second.tsv');
+  select([firstFile, secondFile]);
+  await userEvent.click(screen.getByRole('button', { name: 'Upload 2 files' }));
+  const retry = await screen.findByRole('button', { name: 'Retry second.tsv' });
+  await waitFor(() => expect(retry).toBeEnabled());
+  expect(screen.getByRole('button', { name: 'Use uploaded files' })).toBeEnabled();
+  // Native click plus async act flushes the immediately resolved upload chain.
+  await act(async () => { retry.click(); });
+  await waitFor(() => expect(datasetsApi.upload).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry second.tsv' })).not.toBeInTheDocument());
+  expect(datasetsApi.upload.mock.calls.map(([file]) => file)).toEqual([firstFile, secondFile, secondFile]);
+  await userEvent.click(screen.getByRole('button', { name: 'Use uploaded files' }));
+  expect(navigate).toHaveBeenCalledWith('/dashboard/pipelines?datasets=source-1,source-2');
+});
+
+test('does not silently slice a successful uploaded batch larger than the pipeline limit', async () => {
+  datasetsApi.upload.mockImplementation(async (file) => ({ dataset: { ...dataset, id: file.name, filename: file.name } }));
+  render(<DatasetsPage />);
+  await screen.findByText('No datasets yet');
+  select(Array.from({ length: 7 }, (_, index) => new File(['id\n1'], `${index}.csv`)));
+  const upload = screen.getByRole('button', { name: 'Upload 7 files' });
+  await act(async () => { upload.click(); });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Use uploaded files' })).toBeEnabled());
+  await userEvent.click(screen.getByRole('button', { name: 'Use uploaded files' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Choose a smaller selection');
+  expect(navigate).not.toHaveBeenCalled();
+});
+
+test('clears a source selection after deletion', async () => {
+  datasetsApi.list.mockResolvedValue(listResponse([dataset]));
+  datasetsApi.remove.mockResolvedValue({ deleted: true });
+  render(<DatasetsPage />);
+  await userEvent.click(await screen.findByRole('checkbox', { name: 'Select orders.csv for pipeline' }));
+  expect(screen.getByRole('button', { name: 'Create pipeline' })).toBeEnabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Delete orders.csv' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm deletion' }));
+  await screen.findByText('orders.csv deleted.');
+  expect(screen.getByRole('button', { name: 'Create pipeline' })).toBeDisabled();
+});
+
+test('requires fresh pipeline selection after replacing a source', async () => {
+  const replaced = { ...dataset, filename: 'new.json', format: 'json' };
+  datasetsApi.list.mockResolvedValueOnce(listResponse([dataset])).mockResolvedValueOnce(listResponse([replaced]));
+  datasetsApi.replace.mockResolvedValue({ dataset: replaced });
+  render(<DatasetsPage />);
+  await userEvent.click(await screen.findByRole('checkbox', { name: 'Select orders.csv for pipeline' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Replace orders.csv' }));
+  fireEvent.change(screen.getByLabelText('Replacement file'), { target: { files: [new File(['[]'], 'new.json')] } });
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm replacement' }));
+  expect(await screen.findByRole('checkbox', { name: 'Select new.json for pipeline' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Create pipeline' })).toBeDisabled();
+  expect(screen.queryByRole('list', { name: 'Selected pipeline sources' })).not.toBeInTheDocument();
 });

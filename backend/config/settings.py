@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "datasets.apps.DatasetsConfig",
+    "etl.apps.EtlConfig",
 ]
 
 MIDDLEWARE = [
@@ -142,6 +143,10 @@ STORAGES = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+ETL_RUN_TIMEOUT_SECONDS = int(os.getenv("ETL_RUN_TIMEOUT_SECONDS", "300"))
+if not 1 <= ETL_RUN_TIMEOUT_SECONDS <= 3600:
+    raise ImproperlyConfigured("ETL_RUN_TIMEOUT_SECONDS must be between 1 and 3600.")
 
 # Nginx is the only route to Django and overwrites X-Forwarded-Proto. Keep
 # USE_X_FORWARDED_HOST disabled so client-supplied forwarded hosts are ignored.

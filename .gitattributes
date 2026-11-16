@@ -1,2 +1,6 @@
 *.sh text eol=lf
 **/Dockerfile text eol=lf
+# Preserve the supplied ETL tool bytes and its recorded checksums on all platforms.
+backend/vendor/etl_tool/*.py -text
+backend/vendor/etl_tool/*.csv -text
+backend/vendor/etl_tool/*.tsv -text

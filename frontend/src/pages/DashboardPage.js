@@ -36,8 +36,8 @@ export default function DashboardPage({ user }) {
           <Link className="text-link" to="/dashboard/runs">View runs</Link>
         </div>
         <div className="activity-empty">
-          <h3>No activity to show yet</h3>
-          <p>Your workflow activity will appear here when pipeline execution is available.</p>
+          <h3>Follow your pipeline runs</h3>
+          <p>Open Runs to see queued work, completed results, and processing errors.</p>
         </div>
       </section>
     </>

@@ -1,5 +1,12 @@
 # CloudETL
 
+Backend ETL integration: [implementation handoff](backend/docs/ETL_IMPLEMENTATION_TEMP.md)
+and [test report](backend/docs/ETL_TEST_REPORT_TEMP.md). The backend supports queued
+CSV/TSV processing with Parquet results and five download formats. The frontend now
+connects uploads, source previews, pipeline configuration, runs and paginated results.
+The local Docker stack was activated and tested on 2026-11-15:
+[live Docker verification](backend/docs/DOCKER_VERIFICATION_TEMP.md).
+
 CloudETL là đồ án môn Điện toán đám mây tại trường đại học. Mục tiêu dự kiến là xây dựng dịch vụ ETL theo mô hình SaaS; các tính năng ETL vẫn đang được phát triển.
 
 ## Công nghệ và mã nguồn

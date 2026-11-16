@@ -20,6 +20,7 @@ auth_patterns = (
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include(auth_patterns, namespace="accounts")),
+    path("api/etl/", include("etl.urls")),
     path("api/datasets/", dataset_views.collection, name="datasets"),
     path("api/datasets/<uuid:dataset_id>/", dataset_views.detail, name="dataset-detail"),
     path("api/datasets/<uuid:dataset_id>/replace/", dataset_views.replace, name="dataset-replace"),

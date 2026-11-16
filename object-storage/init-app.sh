@@ -62,12 +62,12 @@ cat > "$policy_file" <<EOF
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
       "Resource": ["arn:aws:s3:::$AWS_STORAGE_BUCKET_NAME"],
-      "Condition": {"StringLike": {"s3:prefix": ["datasets/*"]}}
+      "Condition": {"StringLike": {"s3:prefix": ["datasets/*", "etl/*"]}}
     },
     {
       "Effect": "Allow",
       "Action": ["s3:AbortMultipartUpload", "s3:DeleteObject", "s3:GetObject", "s3:ListMultipartUploadParts", "s3:PutObject"],
-      "Resource": ["arn:aws:s3:::$AWS_STORAGE_BUCKET_NAME/datasets/*"]
+      "Resource": ["arn:aws:s3:::$AWS_STORAGE_BUCKET_NAME/datasets/*", "arn:aws:s3:::$AWS_STORAGE_BUCKET_NAME/etl/*"]
     }
   ]
 }

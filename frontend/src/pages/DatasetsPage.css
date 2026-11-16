@@ -49,10 +49,20 @@
 .datasets-management-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .datasets-delete-button { color: #a1271d; border: 1px solid #cfa49f; background: #fff; }
 .datasets-delete-button:hover { background: #fff5f3; }
+.datasets-use-uploaded { margin-left: 10px; }
+.datasets-pipeline-selection { margin-bottom: 20px; padding: 0 0 20px; border-bottom: 1px solid #e5e5e5; }
+.datasets-pipeline-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.datasets-selected-sources { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 14px 0 0; padding: 0; list-style: none; }
+.datasets-selected-sources li { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 13px; }
+.datasets-selected-sources li > span { overflow-wrap: anywhere; }
+.datasets-storage-only { color: #626262; }
+.datasets-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: #171717; }
+.datasets-pipeline-selection .form-alert { margin: 12px 0 0; }
 
 @media (max-width: 600px) {
   .datasets-queue li { flex-direction: column; gap: 4px; }
   .datasets-queue-actions { align-self: stretch; justify-content: space-between; }
   .datasets-result { max-width: 100%; }
   .datasets-pagination { justify-content: flex-start; gap: 12px; }
+  .datasets-use-uploaded { margin-top: 8px; margin-left: 0; }
 }

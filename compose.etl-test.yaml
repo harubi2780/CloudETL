@@ -1,0 +1,27 @@
+# Fully disposable tests: separate Compose project/network, tmpfs DB, no host ports.
+services:
+  etl-test-db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: cloudetl_etl_tests
+      POSTGRES_USER: cloudetl_test
+      POSTGRES_PASSWORD: isolated-test-only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudetl_test -d cloudetl_etl_tests"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+  tests:
+    image: cloudetl-etl-test:local
+    build: ./backend
+    environment:
+      DJANGO_SETTINGS_MODULE: config.test_settings
+      ETL_TEST_DB_HOST: etl-test-db
+    volumes:
+      - ./backend:/app:ro
+    depends_on:
+      etl-test-db:
+        condition: service_healthy
+    command: ["python", "manage.py", "test", "tests", "--settings=config.test_settings", "--noinput"]

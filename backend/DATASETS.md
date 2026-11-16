@@ -3,8 +3,10 @@
 CloudETL accepts authenticated uploads of CSV, TSV, JSON, XLSX, and Parquet files.
 Original bytes go to Django storage; PostgreSQL holds ownership, metadata, and a
 storage reference. Users can upload, list, replace, and delete their datasets.
-Pipelines, execution, URL imports, previews, and downloads are not
-implemented. See the [frontend handoff](../frontend/docs/FRONTEND_HANDOFF.md) for
+The ETL backend now provides CSV/TSV previews, asynchronous runs, and authenticated
+result downloads; see the [temporary ETL handoff](docs/ETL_IMPLEMENTATION_TEMP.md).
+The frontend connects these APIs to the pipeline, run and result pages. URL imports remain unimplemented.
+See the [frontend handoff](../frontend/docs/FRONTEND_HANDOFF.md) for
 the page and routing structure.
 
 ## Model and storage
@@ -277,7 +279,7 @@ Current parsing limits bound synchronous work but are not process isolation or
 malware scanning. Rate limiting, per-user storage quotas, and antivirus scanning
 are not implemented. Larger uploads should move validation and processing into
 background workers and use a deliberate direct-to-private-S3 upload design.
-Future previews or downloads need authorized API adapters and controlled retrieval
-(for example short-lived signed access); do not expose stored references or make
-the bucket public. Pipeline configuration should remain structured JSON validated
-by Django, with long-running ETL execution handled asynchronously.
+ETL previews and result downloads now use owner-authorized API adapters without
+exposing storage references or making the bucket public. Pipeline configuration
+is validated JSON, and full runs execute asynchronously. See the temporary ETL
+handoff for processing limits and the connected frontend workflow.

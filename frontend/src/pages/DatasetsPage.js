@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import datasetsApi from '../api/datasets';
+import { navigate } from '../navigation';
 import './DatasetsPage.css';
 
 const defaultLimits = {
@@ -8,6 +9,14 @@ const defaultLimits = {
 };
 const maxSelection = 10;
 const maxResultHistory = 20;
+export const pipelineSourceLimits = { maxSources: 6, maxCombinedInputBytes: 25 * 1024 * 1024 };
+const canProcess = (dataset) => ['csv', 'tsv'].includes(dataset.format);
+
+function pipelineSelectionError(datasets) {
+  if (datasets.length > pipelineSourceLimits.maxSources) return `A pipeline can use up to ${pipelineSourceLimits.maxSources} files. Choose a smaller selection from your uploaded datasets.`;
+  if (datasets.reduce((sum, dataset) => sum + dataset.size_bytes, 0) > pipelineSourceLimits.maxCombinedInputBytes) return 'Combined pipeline inputs must be 25 MB or smaller. Choose a smaller selection from your uploaded datasets.';
+  return '';
+}
 
 function fileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -52,6 +61,8 @@ export default function DatasetsPage({ onSessionExpired }) {
   const [management, setManagement] = useState(null);
   const [managementBusy, setManagementBusy] = useState(false);
   const [managementResult, setManagementResult] = useState('');
+  const [pipelineSources, setPipelineSources] = useState({});
+  const [pipelineError, setPipelineError] = useState('');
   const managementTrigger = useRef(null);
   const queueRef = useRef(queue);
   const active = useRef(true);
@@ -164,9 +175,7 @@ export default function DatasetsPage({ onSessionExpired }) {
     commitQueue((previous) => previous.map((item) => item.id === id ? { ...item, ...changes } : item));
   }
 
-  async function handleUpload(event) {
-    event.preventDefault();
-    const batch = queueRef.current.filter((item) => item.status === 'queued').map((item) => item.id);
+  async function uploadBatch(batch) {
     if (uploadLock.current || management || batch.length === 0) return;
     uploadLock.current = true;
     setUploading(true);
@@ -178,23 +187,23 @@ export default function DatasetsPage({ onSessionExpired }) {
         const item = queueRef.current.find((queuedItem) => queuedItem.id === itemId);
         if (!item || item.status !== 'queued' || !item.file) continue;
         if (expired) {
-          updateItem(item.id, { status: 'failed', message: 'Not uploaded. Sign in again to continue.', file: null });
+          updateItem(item.id, { status: 'failed', message: 'Not uploaded. Sign in again to continue.' });
           continue;
         }
         const file = item.file;
         // Recheck against the latest server-advertised limits before sending.
         const validation = validateFile(file, limits);
         if (validation) {
-          updateItem(item.id, { status: 'failed', message: validation, file: null });
+          updateItem(item.id, { status: 'failed', message: validation });
           continue;
         }
         updateItem(item.id, { status: 'uploading', message: '' });
         try {
-          await datasetsApi.upload(file);
+          const result = await datasetsApi.upload(file);
           succeeded = true;
-          updateItem(item.id, { status: 'uploaded', message: '', file: null });
+          updateItem(item.id, { status: 'uploaded', message: '', file: null, dataset: result.dataset });
         } catch (error) {
-          updateItem(item.id, { status: 'failed', message: uploadError(error), file: null });
+          updateItem(item.id, { status: 'failed', message: uploadError(error) });
           if (error.status === 401) {
             expired = true;
             if (active.current) onSessionExpired?.();
@@ -206,6 +215,46 @@ export default function DatasetsPage({ onSessionExpired }) {
       uploadLock.current = false;
       if (active.current) setUploading(false);
     }
+  }
+
+  function handleUpload(event) {
+    event.preventDefault();
+    uploadBatch(queueRef.current.filter((item) => item.status === 'queued').map((item) => item.id));
+  }
+
+  function retryUpload(id) {
+    if (uploadLock.current || management) return;
+    const item = queueRef.current.find((entry) => entry.id === id);
+    if (!item || item.status !== 'failed' || !item.file) return;
+    updateItem(id, { status: 'queued', message: '' });
+    uploadBatch([id]);
+  }
+
+  function selectPipelineSource(dataset) {
+    setPipelineError('');
+    if (pipelineSources[dataset.id]) {
+      setPipelineSources((previous) => {
+        const next = { ...previous };
+        delete next[dataset.id];
+        return next;
+      });
+      return;
+    }
+    const next = { ...pipelineSources, [dataset.id]: dataset };
+    const error = pipelineSelectionError(Object.values(next));
+    if (error) {
+      setPipelineError(error);
+      return;
+    }
+    setPipelineSources(next);
+  }
+
+  function createPipeline(datasets) {
+    if (uploadLock.current || management || !datasets.length) return;
+    const error = pipelineSelectionError(datasets);
+    setPipelineError(error);
+    if (error) return;
+    navigate(`/dashboard/pipelines?datasets=${datasets.map((dataset) => encodeURIComponent(dataset.id)).join(',')}`);
   }
 
   function beginManagement(type, dataset, trigger) {
@@ -248,6 +297,13 @@ export default function DatasetsPage({ onSessionExpired }) {
       if (!active.current) return;
       setManagementResult(`${dataset.filename} ${type === 'replace' ? 'replaced' : 'deleted'}.${result.warning ? ` ${result.warning}` : ''}`);
       setManagement(null);
+      // A replaced source may have a new format or size; require fresh selection.
+      setPipelineSources((previous) => {
+        const next = { ...previous };
+        delete next[dataset.id];
+        return next;
+      });
+      commitQueue((previous) => previous.map((item) => item.dataset?.id === dataset.id ? { ...item, dataset: null } : item));
       // Reflect the completed operation even if refreshing the list fails.
       setListing((previous) => ({ ...previous, data: { ...previous.data,
         datasets: type === 'replace'
@@ -271,6 +327,9 @@ export default function DatasetsPage({ onSessionExpired }) {
   }
 
   const queuedCount = queue.filter((item) => item.status === 'queued').length;
+  const selectedSources = Object.values(pipelineSources);
+  const uploadedSources = Array.from(new Map(queue.filter((item) => item.status === 'uploaded' && item.dataset && canProcess(item.dataset))
+    .map((item) => [item.dataset.id, item.dataset])).values());
   const data = listing.data;
 
   return (
@@ -320,6 +379,7 @@ export default function DatasetsPage({ onSessionExpired }) {
                       {item.message && ` — ${item.message}`}
                     </span>
                     {item.status === 'queued' && <button className="datasets-remove-button" type="button" onClick={() => removeFile(item.id)} disabled={uploading || managementBusy} aria-label={`Remove ${item.fileName}`}>Remove</button>}
+                    {item.status === 'failed' && item.file && <button className="datasets-remove-button" type="button" onClick={() => retryUpload(item.id)} disabled={uploading || managementBusy || Boolean(management)} aria-label={`Retry ${item.fileName}`}>Retry</button>}
                   </span>
                 </li>
               ))}
@@ -328,6 +388,9 @@ export default function DatasetsPage({ onSessionExpired }) {
           <button className="button button-primary" type="submit" disabled={uploading || managementBusy || Boolean(management) || queuedCount === 0}>
             {uploading ? 'Uploading files…' : queuedCount ? `Upload ${queuedCount} ${queuedCount === 1 ? 'file' : 'files'}` : 'Upload files'}
           </button>
+          {uploadedSources.length > 0 && <button className="button button-secondary datasets-use-uploaded" type="button"
+            disabled={uploading || managementBusy || Boolean(management)} onClick={() => createPipeline(uploadedSources)}>Use uploaded files</button>}
+          {uploadedSources.length > 0 && <p className="datasets-helper">Use {uploadedSources.length} successfully uploaded CSV/TSV {uploadedSources.length === 1 ? 'file' : 'files'} as pipeline sources. Other formats remain available in storage.</p>}
         </form>
       </section>
 
@@ -335,6 +398,21 @@ export default function DatasetsPage({ onSessionExpired }) {
         <div className="datasets-list-heading">
           <h2 id="datasets-list-title">Uploaded datasets</h2>
           {data && <span className="muted-copy">{data.total_count} {data.total_count === 1 ? 'dataset' : 'datasets'}</span>}
+        </div>
+        <div className="datasets-pipeline-selection">
+          <p className="datasets-helper" id="dataset-pipeline-help">Select CSV/TSV sources across pages to build a pipeline. Up to {pipelineSourceLimits.maxSources} files and 25 MB combined.</p>
+          <div className="datasets-pipeline-actions">
+            <span aria-live="polite">{selectedSources.length} selected{selectedSources.length > 0 && ` · ${fileSize(selectedSources.reduce((sum, dataset) => sum + dataset.size_bytes, 0))}`}</span>
+            <button className="button button-primary" type="button" disabled={!selectedSources.length || uploading || managementBusy || Boolean(management)}
+              onClick={() => createPipeline(selectedSources)}>Create pipeline</button>
+            {selectedSources.length > 0 && <button className="datasets-remove-button" type="button" disabled={uploading || managementBusy || Boolean(management)}
+              onClick={() => { setPipelineSources({}); setPipelineError(''); }}>Clear selection</button>}
+          </div>
+          {selectedSources.length > 0 && <ul className="datasets-selected-sources" aria-label="Selected pipeline sources">
+            {selectedSources.map((dataset) => <li key={dataset.id}><span>{dataset.filename}</span><button className="datasets-remove-button" type="button"
+              disabled={uploading || managementBusy || Boolean(management)} aria-label={`Deselect ${dataset.filename}`} onClick={() => selectPipelineSource(dataset)}>Remove</button></li>)}
+          </ul>}
+          {pipelineError && <p className="form-alert" role="alert">{pipelineError}</p>}
         </div>
         {managementResult && <p role="status">{managementResult}</p>}
         {management && (
@@ -374,13 +452,17 @@ export default function DatasetsPage({ onSessionExpired }) {
             <div className="datasets-table-scroll">
               <table className="datasets-table">
                 <caption className="datasets-table-caption">Your uploaded source files</caption>
-                <thead><tr><th scope="col">Filename</th><th scope="col">Format</th><th scope="col">Size</th><th scope="col">Uploaded</th><th scope="col">Actions</th></tr></thead>
+                <thead><tr><th scope="col">Select</th><th scope="col">Filename</th><th scope="col">Format</th><th scope="col">Size</th><th scope="col">Uploaded</th><th scope="col">Processing</th><th scope="col">Actions</th></tr></thead>
                 <tbody>{data.datasets.map((dataset) => (
                   <tr key={dataset.id}>
+                    <td><input type="checkbox" aria-label={`Select ${dataset.filename} for pipeline`} aria-describedby="dataset-pipeline-help"
+                      checked={Boolean(pipelineSources[dataset.id])} disabled={!canProcess(dataset) || uploading || managementBusy || Boolean(management) || listing.status !== 'ready'}
+                      onChange={() => selectPipelineSource(dataset)} /></td>
                     <th scope="row">{dataset.filename}</th>
                     <td>{dataset.format.toUpperCase()}</td>
                     <td>{fileSize(dataset.size_bytes)}</td>
                     <td><time dateTime={dataset.uploaded_at}>{new Date(dataset.uploaded_at).toLocaleString()}</time></td>
+                    <td>{canProcess(dataset) ? 'ETL ready' : <span className="datasets-storage-only">Storage only</span>}</td>
                     <td><div className="datasets-management-actions">
                       <button className="button button-secondary" type="button" disabled={uploading || managementBusy || Boolean(management) || listing.status !== 'ready'}
                         aria-label={`Replace ${dataset.filename}`} onClick={(event) => beginManagement('replace', dataset, event.currentTarget)}>Replace</button>

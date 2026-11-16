@@ -25,7 +25,7 @@ services:
       - rustfs
 
   backend:
-    environment:
+    environment: &local-storage-environment
       AWS_S3_ENDPOINT_URL: http://rustfs:9000
       AWS_S3_ADDRESSING_STYLE: path
       AWS_ACCESS_KEY_ID: ${RUSTFS_APP_ACCESS_KEY:?Set RUSTFS_APP_ACCESS_KEY in the root .env file}
@@ -33,11 +33,15 @@ services:
       DATASET_LEGACY_STORAGE_ROOT: /app/legacy-media
     volumes:
       - dataset_files:/app/legacy-media:ro
-    depends_on:
+    depends_on: &local-storage-dependencies
       db:
         condition: service_healthy
       storage-init:
         condition: service_completed_successfully
+
+  etl-worker:
+    environment: *local-storage-environment
+    depends_on: *local-storage-dependencies
 
 volumes:
   rustfs_data:

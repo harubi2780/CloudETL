@@ -46,7 +46,7 @@ export default function DashboardLayout({ user, page, onSignOut, children }) {
       <div className="dashboard-body">
         <header className="dashboard-topbar">
           <span>Workspace / {page.label}</span>
-          <span className="preview-label">Workspace preview</span>
+          <span className="preview-label">CloudETL</span>
         </header>
         <main className="dashboard-content" id="main-content" tabIndex={-1}>
           {children}

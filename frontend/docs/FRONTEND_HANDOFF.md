@@ -1,153 +1,222 @@
-# Frontend handoff
+﻿# Frontend handoff
 
 ## Current scope
 
-CloudETL has a public landing page, Django session authentication, an authenticated
-workspace, and working dataset upload, listing, replacement, and deletion. The UI uses white surfaces, dark
-text, subtle borders, and minimal rounding. The upload UI adds no frontend runtime
-dependencies.
+CloudETL provides public landing and account pages plus an authenticated workspace
+for saved datasets, pipeline configuration, background execution, run history,
+paginated results, and downloads. The UI uses flat surfaces, subtle borders and
+minimal rounding, without a new router or UI dependency.
 
-Dataset files persist in backend storage with owner-scoped metadata in PostgreSQL.
-Pipeline editing, execution, results, and activity remain previews with coming-soon
-actions. There are no URL imports, file previews, downloads, or ETL
-processing. The UI does not invent statistics or sample records. Read the
-[dataset backend guide](../../backend/DATASETS.md) for contracts, validation
-bounds, storage, migrations, and the dedicated PostgreSQL test database.
+File bytes remain in private Django storage; PostgreSQL stores owner-scoped metadata
+and references. React receives metadata, previews, run state, configuration, bounded
+result pages and authenticated download responses. No browser storage/database
+credentials or public object-storage links are exposed.
 
-Dataset rows offer Replace and Delete actions with explicit confirmation. Replacing
-requires a valid replacement file and keeps the dataset ID. Deletion is permanent.
-Both use the shared CSRF-aware API client and show backend cleanup warnings.
-Operation success remains visible even if the subsequent list refresh fails.
+The copied ETL tool remains unchanged. Its standalone demonstration scripts and the
+old mock pipeline simulator are not used by the connected workflow. Read the
+[dataset backend guide](../../backend/DATASETS.md),
+[ETL implementation handoff](../../backend/docs/ETL_IMPLEMENTATION_TEMP.md), and
+[ETL test report](../../backend/docs/ETL_TEST_REPORT_TEMP.md) for server behavior,
+limits, worker activation and backend verification.
+The [workflow test report](../../backend/docs/FRONTEND_WORKFLOW_TEST_REPORT_TEMP.md)
+records the frontend integration, verification results and remaining activation steps.
+Local activation was subsequently completed on 2026-11-15; see the
+[live Docker report](../../backend/docs/DOCKER_VERIFICATION_TEMP.md).
 
 ## Source map
 
-- `src/App.js` composes route selection, session guards, redirects, page titles,
-  and focus/scroll behavior on route changes.
-- `src/navigation.js` provides `Link`, `navigate`, and `useLocation` using the
-  browser History API and React's `useSyncExternalStore`. It observes `popstate`
-  for browser back/forward navigation. `Link` renders real anchors and preserves
-  modified clicks, new tabs, and copy-link behavior.
-- `src/routes.js` keeps the `workspacePages` registry and route metadata together.
-  It also normalizes trailing slashes and allowlists authentication return paths.
-- `src/hooks/useSession.js` restores the session and tracks loading, ready, and
-  error states. It clears the current user after successful server logout or a
-  dataset API 401 through the stable `expire` callback.
-- `src/api/client.js` is shared transport for authentication and datasets. It sends
-  same-origin credentials, holds one CSRF token in memory, attaches it to mutations,
-  serializes JSON, preserves browser-generated `FormData` boundaries, and exposes
-  structured `ApiError` objects. It never stores auth tokens in `localStorage`.
-- `src/api/auth.js` validates session/authentication responses through this client;
-  `src/api/datasets.js` owns dataset list and multipart upload requests.
-- `src/pages/LandingPage.js` owns the public home page and its standalone CSS.
-- `src/pages/AuthPage.js` owns sign-in/registration forms, loading state, and
-  accessible server field errors.
-- `src/pages/DashboardPage.js` owns the overview and workspace navigation links.
-- `src/pages/DatasetsPage.js` and its stylesheet own file selection, sequential
-  upload results, real metadata listing, pagination, and list retry.
-- `src/pages/WorkspacePage.js` renders the remaining feature previews from route
-  metadata.
-- `src/pages/NotFoundPage.js` renders the unknown-route UI.
-- `src/components/AuthLayout.js` contains the centered account layout.
-- `src/components/DashboardLayout.js` contains workspace navigation, account
-  details, and sign-out controls. `DashboardLayout.css` contains its responsive
-  sidebar, dashboard, and feature-preview styles.
-- `src/App.css` contains shared controls and application layouts;
-  `src/index.css` contains global resets and typography.
+- `src/App.js` composes pages, session guards, redirects, titles, and route focus.
+- `src/routes.js` registers workspace pages, validates UUID run/result detail
+  routes, and allowlists login return paths while preserving query parameters.
+- `src/navigation.js` provides real `Link` anchors, `navigate`, and `useLocation`
+  through the History API and `useSyncExternalStore`, including back/forward.
+- `src/hooks/useSession.js` owns session restoration and expiry.
+- `src/api/client.js` sends same-origin credentials, holds one in-memory CSRF token,
+  attaches it to mutations, preserves multipart boundaries, and returns structured
+  `ApiError` objects. Authentication is never persisted in `localStorage`.
+- `src/api/auth.js` and `src/api/datasets.js` own account and dataset requests.
+- `src/api/etl.js` owns capabilities, source metadata/previews, submission, run
+  history/details, result pages and binary downloads. Downloads use same-origin
+  credentials, a temporary object URL and safe API errors; the URL is released.
+- `src/pages/DatasetsPage.js` owns upload/list/replace/delete, per-file retry,
+  selected pipeline sources, and upload-to-pipeline handoff.
+- `src/pages/PipelinesPage.js` owns source loading, original previews, current-page
+  draft state, step ordering and configuration, review, validation and submission.
+- `src/components/pipeline/WorkflowStepConfig.js` contains the ten supported
+  operation forms. `src/lib/pipeline/workflow.js` contains operation defaults,
+  dtype mapping, predicted column schemas, used-source tracking and validation.
+  Predicted schemas assist configuration; they do not transform data in React.
+- `src/hooks/useRun.js` owns abortable run fetching and visible-page polling.
+- `src/pages/RunsPage.js` provides filtered/paginated history;
+  `RunDetailPage.js` provides status, elapsed time, errors and submitted JSON.
+- `src/pages/ResultsPage.js` lists successful runs; `ResultsDetailPage.js` owns
+  server-paginated rows, available export formats, and download state.
+- `src/components/etl/DataTable.js` renders previews/results with distinct scalar
+  states; `Pagination.js` provides shared page controls.
+- `src/pages/EtlWorkflow.css` styles the connected ETL pages. `DatasetsPage.css`
+  remains scoped to upload/library controls.
+- `LandingPage.js`, `AuthPage.js`, `DashboardPage.js`, and `NotFoundPage.js` retain
+  public/account/overview/error responsibilities. `AuthLayout.js` and
+  `DashboardLayout.js` provide account/workspace shells; `App.css` and `index.css`
+  contain shared controls and global styles.
 
 ## URLs and session behavior
 
-- `/` is public and remains the landing page for signed-in users. Their main CTA
-  opens `/dashboard`. A failed session check does not hide the landing content.
-- `/login` and `/register` show account forms after session restoration. A
-  signed-in user is redirected to `/dashboard` or an allowlisted `next` path.
-- `/dashboard` shows the authenticated overview.
-- `/dashboard/datasets` provides authenticated dataset uploads and metadata.
-- `/dashboard/pipelines`, `/dashboard/runs`, and `/dashboard/results` show
-  authenticated feature previews.
-- A signed-out visit to a registered workspace page redirects to
-  `/login?next=<encoded path>`. Successful sign-in or registration returns there.
-  `getReturnPath` accepts only exact registered workspace paths; all other values
-  fall back to `/dashboard`.
-- Successful sign-out navigates to `/login`. Failed sign-out keeps the user and
-  workspace visible and offers another attempt.
-- Dataset API 401 responses expire the local session; the normal guard returns
-  to sign-in with the dataset route as the allowlisted return path. Uploads stop
-  before sending remaining files in that batch.
-- Unknown URLs show the page-not-found UI. Route guards are frontend navigation
-  behavior; backend authorization must enforce access independently.
+- `/` remains public, including during session-check failure. Signed-in users can
+  open `/dashboard` from its main action.
+- `/login` and `/register` restore the session and use the allowlisted `next`
+  destination after successful authentication.
+- `/dashboard/datasets` manages saved sources.
+- `/dashboard/pipelines` opens a new draft and allows adding saved sources.
+- `/dashboard/pipelines?datasets=<UUID>,<UUID>` preselects saved source IDs; the
+  first is initially the starting dataset. IDs are validated and fetched from the
+  owner-authorized metadata API, independent of library pagination.
+- `/dashboard/pipelines?run=<UUID>` restores a run's configuration and referenced
+  source IDs for editing and resubmission. Missing/deleted sources show errors;
+  users must resolve them before running. The old run is not edited.
+- `/dashboard/runs` shows history; `/dashboard/runs/<UUID>` shows a run.
+- `/dashboard/results` shows successful runs;
+  `/dashboard/results/<UUID>` browses/downloads one result.
 
-## Extending the workspace
+Signed-out workspace visits return to `/login?next=<encoded path and query>`.
+Authentication return validation accepts registered workspace paths and valid UUID
+detail paths, preserving their query strings; arbitrary origins, paths and malformed
+destinations fall back to `/dashboard`. Unknown routes show the not-found page.
+Backend authorization remains mandatory despite these frontend guards.
 
-The dataset page is the first implemented feature boundary. It loads server limits
-and accepts a queue of up to 10 pending files. Picker selections and drag-and-drop
-append to the queue; users can remove individual files before Upload. Rejected
-files are announced and excluded instead of remaining in the pending queue.
-Client checks catch unsupported, empty, or oversized files; Django validates
-content and remains authoritative. Each
-valid file is sent sequentially in a separate multipart request containing only
-`file`. There are no fake progress percentages. A batch keeps per-file ready,
-uploading, uploaded, and failed states, preserving the latest 20 completed results
-when selecting another batch. Completed entries retain only filename/size metadata
-and release their file objects. No queue is persisted across reloads.
+API 401 responses expire the local session. An upload batch stops sending remaining
+files after expiry. Failed logout keeps the user/workspace visible for retry;
+successful logout opens `/login`. Preserve real links and keyboard navigation when
+extending routing.
 
-The dataset list has separate loading, successful empty, populated, and error/retry
-states, with 20 records per server page. Successful uploads refresh page 1. A list
-refresh error does not turn a successful upload into a failed result; a previously
-loaded nonempty list is explicitly marked stale after refresh fails. Superseded
-list fetches and unmounts abort their requests. Uploaded originals remain private:
-there are no public storage links or retrieval controls in this UI.
+## Upload and source selection
 
-1. Add navigation metadata to `workspacePages` when adding a workspace route.
-   This registry also defines valid post-authentication return paths.
-2. Replace the generic `WorkspacePage` with dedicated pages as the remaining
-   features are implemented, following `DatasetsPage`. Keep route metadata
-   descriptive; do not put ETL business logic in the registry or router.
-3. Put API communication in feature modules under `src/api/` and keep reusable
-   request/state behavior separate from presentation components where useful.
-4. Model loading, successful empty responses, populated results, failures, and
-   retry behavior explicitly. Once an API is connected, do not display a preview
-   empty state as if fetching succeeded when a request is pending or failed.
-5. Preserve real links, current-page indicators, useful focus handling, readable
-   errors, mobile layouts, and clear disabled-action explanations.
+The upload queue accepts up to ten pending files. New picker/drop selections append;
+invalid, empty, oversized or duplicate pending selections produce per-file notices.
+Files upload sequentially, with ready/uploading/uploaded/failed outcomes and no
+invented percentages. A failed item keeps its `File` for an explicit per-file retry;
+successful entries release their file objects and retain returned dataset metadata.
+The last twenty completed outcomes are retained while the page remains mounted.
+No upload queue is persisted across reloads.
 
-The backend must authorize every feature request and validate uploaded files and
-transformation configurations. Dataset uploads already use Django storage with
-PostgreSQL metadata and references; local Compose uses a private S3-compatible
-RustFS bucket. The same Django storage adapter supports private AWS S3 through
-backend environment configuration. The legacy `dataset_files` volume remains
-read-only for explicit verified copying. Represent transformation steps as
-structured JSON sent to Django. Long-running ETL work should run as background
-jobs, with progress and results exposed through explicit API contracts. Do not block web
-requests on long transformations or expose storage/database credentials in React.
+Uploads may store CSV, TSV, JSON, XLSX and Parquet. Processing currently supports
+CSV/TSV only: other library rows are marked **Storage only** and cannot be selected
+as ETL inputs. Checkbox selections retain source metadata across library pages and
+show a removable selected-source list. **Create pipeline** passes the selected IDs
+to the builder. **Use uploaded files** passes successful CSV/TSV upload IDs. It does
+not silently truncate a batch larger than the processing limit; it directs users
+to choose a smaller library selection.
 
-Continue using the existing Django session/CSRF approach. Do not add auth tokens
-to `localStorage` or treat frontend route guards as a security boundary. Keep
-secrets in environment configuration, outside committed frontend source.
+Current source-selection defaults match the backend: six unique files and 25 MiB
+combined. The builder retrieves capabilities and Django validates actual limits;
+backend capabilities and errors remain authoritative if settings change. The
+library's upload limits come from its list response, separately from processing
+limits. Keep these boundaries distinct when changing either limit.
 
-Future larger uploads need coordinated server/proxy bounds and background
-validation, potentially with private direct-to-S3 uploads. Retrieval features need
-authorized API adapters and controlled access such as short-lived signed URLs.
+The library has explicit loading/empty/populated/error states and server pagination.
+Uploads refresh its first page. Successful upload/management outcomes remain
+successful even if list refresh fails. Replacement and deletion require explicit
+confirmation; successful replacement keeps the dataset ID but clears its pipeline
+selection because format/size may change. Deletion also clears selection and any
+upload-result handoff for the removed dataset. Both actions preserve cleanup
+warnings returned by Django.
 
-## Serving and deep links
+## Pipeline configuration and extraction
 
-`frontend/nginx.conf` already falls back to `index.html` for application URLs, so
-opening or refreshing a workspace deep link can load the React app. Its `/api/`
-and `/admin/` proxy locations and `/static/` handling serve backend and build
-assets. Preserve those locations when changing frontend routes; do not replace
-them with the SPA fallback.
+The builder fetches private metadata and the first ten rows for each selected
+source, including inferred column types and total source row count. Users can
+switch the displayed source and choose the starting dataset. Failed previews have
+retry controls; every selected source needs a successful preview before submission.
+Original files remain saved and unchanged.
 
-Nginx permits 26 MiB total requests to fit the backend's maximum 25 MiB file plus
-multipart overhead. Lower per-file limits come from the dataset API. Coordinate
-future limit changes with backend settings and validators. No media alias is
-configured for uploaded files.
+Ten operation forms generate structured JSON, in execution order:
 
-The frontend router has no external router dependency. If future routing needs
-justify adopting one, plan that dependency/configuration change with the user
-before installing it.
+- Select columns, remove duplicates, handle missing values, convert data type,
+  clean text, filter rows, replace values, and format dates.
+- **Join tables** selects another source, one shared column name, and left/right/
+  inner/outer row retention. Multiple matches can increase output row count;
+  overlapping non-key names receive `_x` and `_y` suffixes.
+- **Append rows** stacks selected files onto current data in selection order,
+  showing column differences and warning that missing fields become NULL.
 
-## Verification and local operation
+Users add, configure, move, disable and remove steps. Forms restrict options to the
+advertised backend capabilities; unsupported options from the former simulator
+(such as title case, boolean conversion, median/mode or keeping the last duplicate)
+are not offered. Disabled steps remain subject to structural configuration
+validation, matching the backend contract. Before submission, validation also
+checks missing/removed columns, unused selected sources, numeric-only operations,
+source/step limits, schema collisions and the JSON request-size cap.
 
-From `frontend/`, with dependencies already available, run:
+The source table always contains original extracted rows. There is no simulated
+**After** table or client-side ETL executor. Actual transformed rows appear only
+after execution. Predicted column schemas are used to configure downstream steps;
+the backend computes actual types and results.
+
+Drafts exist only on the current page. The builder warns before browser unload
+when a draft has edits; it does not save pipeline templates or promise recovery
+after navigation/reload. Submitting sends versioned JSON with `name`, `datasetId`
+and ordered `{type, enabled, config}` steps. A successful HTTP 202 opens the new
+run detail. Reusing configuration creates a new run; completed history is immutable.
+
+Inference is visible behavior, not a data-preserving type declaration. Numeric
+phone identifiers can lose leading zeros, invalid integer conversion can become
+zero, and automatic date parsing can turn mixed/unrecognized formats into missing
+values. Do not imply a later text cast restores already inferred leading zeros.
+The source bytes remain available to the backend unchanged. See the ETL handoff
+for the preserved tool's additional semantics and limits.
+
+## Runs, results and downloads
+
+Run history supports status filtering and pagination. Result history requests only
+successful runs. Opening a pending run polls every two seconds while the document
+is visible; hidden documents pause repeat polling and visibility resumes it.
+Polling stops on terminal status or request failure; failures offer retry. Unmount
+and route changes abort requests and clear timers. Elapsed time is derived from
+server timestamps and the last status check, without fake progress percentages.
+
+Details preserve the submitted JSON, display safe failure messages, and link to
+**Edit and resubmit**. Successful runs link to their result. Result details fetch
+25, 50 or 100 rows per server page and reset to page one when page size changes.
+Loading and retry states are separate from successful empty results. The table
+distinguishes NULL, missing fields, empty strings, numeric zero, and boolean false.
+An empty result keeps its schema and download options.
+
+Download formats come from capabilities: CSV, TSV, XLSX, JSON and Parquet. The
+download includes every output row regardless of table pagination. Preparing,
+failure and browser-handoff states are explicit; browser handoff is not described
+as proof that a file was saved to disk. Downloads remain authenticated, and errors
+never display raw proxy responses.
+
+## API boundaries
+
+`src/api/etl.js` calls the following same-origin endpoints:
+
+- `GET /api/etl/capabilities/`: input/output formats, operation choices and limits.
+- `GET /api/etl/datasets/<UUID>/`: owner-scoped source metadata.
+- `GET /api/etl/datasets/<UUID>/preview/`: ten original rows plus schema/count.
+- `POST /api/etl/runs/`: queue a validated pipeline, returning HTTP 202 and a run.
+- `GET /api/etl/runs/?page=1&status=running`: owner-scoped paginated history;
+  status is optional, with `succeeded` used by result history.
+- `GET /api/etl/runs/<UUID>/`: status, summary/error and private-owner-visible
+  `configuration` for review and reuse. It does not expose storage keys/secrets.
+- `GET /api/etl/runs/<UUID>/rows/?page=1&page_size=25`: bounded result rows,
+  columns, page/page-size, total pages and total row count.
+- `GET /api/etl/runs/<UUID>/download/?format=parquet`: complete result attachment.
+
+Dataset list/upload/replace/delete continue using `/api/datasets/`. Mutations use
+the existing Django session/CSRF flow. Frontend controls are convenience validation;
+Django verifies ownership and payloads, queues long work, detects changed inputs,
+and accesses private storage. Keep ETL and database business logic out of React.
+
+## Serving, verification and activation
+
+Nginx falls back to `index.html` for SPA paths, enabling run/result deep links.
+Preserve its `/api/`, `/admin/`, static asset handling, and the 26 MiB request cap
+when changing routes. API requests require a same-origin Django proxy; the default
+development server alone does not supply the backend. There is no public media
+alias. Larger uploads require coordinated proxy/server/worker changes.
+
+With existing dependencies, run from `frontend/`:
 
 ```powershell
 $env:CI = 'true'
@@ -155,23 +224,31 @@ npm test -- --watchAll=false --runInBand
 npm run build
 ```
 
-Review the actual diff and successful command output before reporting checks as
-passed. Useful route scenarios include public home during an API outage,
-restored sessions, signed-out deep links, login/registration return paths,
-rejection of arbitrary `next` targets, logout failure/retry, browser back/forward,
-and unknown URLs. Dataset checks include invalid selections, partial failures,
-sequential submission, list refresh failure after successful upload, pagination,
-and session expiry. Check both narrow and wide layouts and keyboard navigation.
+Relevant checks include selected IDs across pages, mixed upload success/retry,
+capability loading failures, source preview errors, joins/appends and step order,
+configuration reuse, double-submission prevention, polling cleanup/visibility,
+status filtering, paginated empty/populated results, scalar rendering, download
+errors, session expiry, query-preserving login returns and unknown routes. Inspect
+both narrow/wide layouts and keyboard interaction. Review actual output before
+claiming checks passed; no final execution counts are asserted by this guide.
 
-From the repository root, an operator can rebuild the existing local frontend:
+Use the separate `compose.etl-test.yaml` test project and `config.test_settings`
+for PostgreSQL tests; exact commands and cleanup are in the ETL test report. Its
+database is disposable, with no application volume or published ports. Do not
+substitute the application database for tests.
+
+Source edits alone do not update running services. This local stack was rebuilt,
+migrated and activated with user approval on 2026-11-15. Activation on another
+environment remains subject to the applicable `AGENTS.md` approvals; the backend
+ETL handoff gives the required operator sequence. After the backend is
+prepared, an approved frontend rebuild can run from the repository root:
 
 ```powershell
-docker compose up -d --build backend frontend
+docker compose build frontend
+docker compose up -d frontend
 ```
 
-This updates local containers and may start configured dependencies. It is not a
-cloud deployment and does not apply schema migrations. Use the backend guide for
-explicit migration/check commands and dedicated-database tests with `--keepdb`.
-Do not run installations, migrations, commits, pushes, or deployments without the
-approvals required by repository `AGENTS.md`. Commands in these guides document
-the workflow; their presence does not claim a successful run.
+Starting services may start configured dependencies. Commands here document the
+workflow, not proof of deployment, service activation or migration execution.
+Installations, migrations, data deletion, commits, pushes and deployments still
+require the applicable repository approvals.

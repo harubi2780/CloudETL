@@ -1,0 +1,5 @@
+order_id,city,customer_tier,total_amount,customer_phone
+ORD01,HCM,VIP,1500000.0,901234567
+ORD02,Hà Nội,Standard,933333.33,912345678
+ORD03,HCM,VIP,500000.0,987654321
+ORD04,Đà Nẵng,Standard,800000.0,933445566

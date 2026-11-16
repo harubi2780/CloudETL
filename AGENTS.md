@@ -46,7 +46,7 @@ data after being transform and load will be store as parquet file, but can be co
 - Keep delegated tasks narrowly scoped with clear acceptance criteria.
 - Do not delegate security-sensitive decisions without review.
 - Ask before installing dependencies or making significant configuration changes.
-- you may spawn up to 5 subagent depens on the task, ask if >= 3.
+- you may spawn up to 6 subagent depens on the task, ask if >= 4.
 
 ### Phase 3: Verify and Review
 - Inspect all modified files and review the actual diff.

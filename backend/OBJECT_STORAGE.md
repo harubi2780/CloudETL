@@ -111,10 +111,12 @@ example, not an automatic AWS deployment. Existing local files and objects do no
 transfer to AWS automatically. AWS bucket provisioning, IAM role attachment, and
 deployment remain explicit operator steps.
 
-The role should permit `s3:ListBucket` only for the dataset prefix, and
+The role should permit `s3:ListBucket` only for the `datasets/*` and `etl/*` prefixes, and
 `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload`, and
 `s3:ListMultipartUploadParts` only for
-`arn:aws:s3:::YOUR_BUCKET/datasets/*`. Delete access supports cleanup of a newly
+`arn:aws:s3:::YOUR_BUCKET/datasets/*` and `arn:aws:s3:::YOUR_BUCKET/etl/*`.
+The latter is required for worker output persistence and result retrieval.
+Delete access supports cleanup of a newly
 written object if the database insert fails. A KMS key requires the corresponding
 KMS permissions when using SSE-KMS. Do not grant public or anonymous access.
 

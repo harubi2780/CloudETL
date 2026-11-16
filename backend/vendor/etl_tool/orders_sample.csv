@@ -1,0 +1,6 @@
+﻿order_id,customer_name,city,total_amount,quantity,is_paid,order_date
+ORD01,Nguyen Van A,Hồ Chí Minh,1500000,2,True,2026/10/01
+ORD02,Tran Thi B,Hà Nội,,1,False,02-10-2026
+ORD01,Nguyen Van A,Hồ Chí Minh,1500000,2,True,2026/10/01
+ORD03,Le Van C,Hồ Chí Minh,500000,,True,2026-10-03
+ORD04,,Đà Nẵng,800000,3,False,04/10/2026

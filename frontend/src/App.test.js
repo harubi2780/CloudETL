@@ -305,7 +305,8 @@ test.each(['https://example.com', '//example.com', '/unregistered'])('ignores an
 test('shows a not-found page instead of treating an unknown URL as a dashboard page', async () => {
   window.history.replaceState(null, '', '/dashboard/missing');
   startSignedOut();
-  await act(async () => { render(<App />); });
+  render(<App />);
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/auth/me/', expect.anything()));
   expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
   await userEvent.click(screen.getByRole('link', { name: 'Back to home' }));
   expect(screen.getByRole('heading', { name: 'From raw data to ready.' })).toBeInTheDocument();

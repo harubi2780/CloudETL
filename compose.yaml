@@ -20,7 +20,7 @@ services:
       retries: 12
       start_period: 10s
 
-  backend:
+  backend: &backend-service
     build:
       context: ./backend
     restart: unless-stopped
@@ -42,9 +42,14 @@ services:
       DB_PORT: "5432"
       DB_SSLMODE: ${DB_SSLMODE:-prefer}
       DATASET_MAX_FILE_SIZE_BYTES: ${DATASET_MAX_FILE_SIZE_BYTES:-26214400}
+      ETL_RUN_TIMEOUT_SECONDS: ${ETL_RUN_TIMEOUT_SECONDS:-300}
     depends_on:
       db:
         condition: service_healthy
+
+  etl-worker:
+    <<: *backend-service
+    command: ["python", "manage.py", "run_etl_worker"]
 
   frontend:
     build:

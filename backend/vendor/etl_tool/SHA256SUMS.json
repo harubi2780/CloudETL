@@ -1,0 +1,10 @@
+{
+    "extract.py":  "9f13900c60f5eb734a048b25d071132737a55998ba82c40ed81a3ffd4c04fe19",
+    "transform.py":  "aa3114327260d94e79e87a992a1599f24e926c578d1ee59116ecc43e1760455f",
+    "load.py":  "8ee1fc8eece14fef61719bae0a9680e0a4ca0a08270f61d7711e4f05727ae845",
+    "tool_ETL.py":  "b13dbbc7e7435b34e5f1602e01d7b6a107d3ad7ccd740ff07710daf327bbf93f",
+    "test_user_choices.py":  "65d947dbb45146b02a8e077325cb62cc895191f015ebf286fba3fd2a33ae53de",
+    "orders_sample.csv":  "9f449802d3299d6be017c7849dff8a7195391530a2b92d0200e1755556d3e4f4",
+    "customers_sample.tsv":  "159ab94ae3e2acede2e38e9965c7f0fdedaf9aafaf2799e69af4e55d9acfd1f3",
+    "ket_qua_lam_sach.csv":  "6773202cf465103e1efaa10c50ee37650e1dd430d6b214dfd10cf516d27d137b"
+}
