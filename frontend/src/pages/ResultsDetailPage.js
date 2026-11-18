@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import etlApi from '../api/etl';
 import DataTable from '../components/etl/DataTable';
 import Pagination from '../components/etl/Pagination';
+import Spinner from '../components/etl/Spinner';
 import useRun from '../hooks/useRun';
-import { runDate } from './RunsPage';
+import { runDate, RunStatus } from './RunsPage';
 import { Link } from '../navigation';
 import './EtlWorkflow.css';
 
@@ -97,24 +98,31 @@ export default function ResultsDetailPage({ runId, onSessionExpired }) {
 
   return <div className="etl-page">
     <Link to="/dashboard/results">← All results</Link>
-    <header className="page-heading"><h1>{run ? `${run.name} — result` : 'Result'}</h1><p>Browse rows a page at a time. Downloads contain the full result.</p></header>
-    {loading && <p role="status">Loading result…</p>}
+    <header className="page-heading etl-result-heading" aria-label="Result heading">
+      <div className="etl-result-heading-copy"><h1>{run ? `${run.name} — result` : 'Result'}</h1>
+        {run && <div className="etl-actions etl-detail-links"><Link to={`/dashboard/runs/${run.id}`}>Run details</Link><Link to={`/dashboard/pipelines?run=${run.id}`}>Edit and resubmit</Link></div>}
+      </div>
+      {run?.status === 'succeeded' && <div className="etl-download-controls" role="group" aria-label="Download full result">
+        <label>File format <select value={format} onChange={(event) => setFormat(event.target.value)} disabled={formatsLoading || downloading || formats.length === 0}>{formats.map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select></label>
+        <button className="button button-primary" type="button" onClick={download} disabled={downloading || formatsLoading || !formats.includes(format)} aria-describedby="etl-download-description" aria-busy={downloading}>{downloading && <Spinner />}{downloading ? 'Preparing download…' : 'Download full result'}</button>
+        <span className="etl-note etl-download-description" id="etl-download-description">All rows, all pages.</span>
+      </div>}
+    </header>
+    {loading && <p className="etl-loading" role="status"><Spinner />Loading result…</p>}
     {error && <div className="etl-error" role="alert"><p>{error}</p><button className="button button-secondary" type="button" onClick={retry}>Retry result</button></div>}
-    {run && <div className="etl-actions etl-detail-links"><Link to={`/dashboard/runs/${run.id}`}>Run details</Link><Link to={`/dashboard/pipelines?run=${run.id}`}>Edit and resubmit</Link></div>}
-    {run && run.status !== 'succeeded' && <section className="etl-section"><h2>Result not ready</h2><p>{run.status === 'failed' ? run.error?.message || 'This run failed without producing a result.' : 'This run is still waiting or processing. Its status updates automatically.'}</p></section>}
+    {run && run.status !== 'succeeded' && <section className="etl-section"><div className="etl-toolbar"><h2>Result not ready</h2><RunStatus status={run.status} /></div><p>{run.status === 'failed' ? run.error?.message || 'This run failed without producing a result.' : 'This run is still waiting or processing. Its status updates automatically.'}</p></section>}
     {run?.status === 'succeeded' && <>
-      <dl className="etl-facts"><div><dt>Completed</dt><dd>{runDate(run.finished_at)}</dd></div><div><dt>Output rows</dt><dd>{run.summary?.final_rows?.toLocaleString() ?? 'Unavailable'}</dd></div><div><dt>Columns</dt><dd>{run.summary?.columns?.length ?? rowState.data?.columns?.length ?? 'Unavailable'}</dd></div></dl>
-      <section className="etl-section" aria-labelledby="etl-download-title"><h2 id="etl-download-title">Download full result</h2><p className="etl-note">The selected format includes every output row, across all pages.</p>
-        {formatsLoading && <p role="status">Loading download formats…</p>}
+      <dl className="etl-facts etl-result-facts"><div><dt>Completed</dt><dd>{runDate(run.finished_at)}</dd></div><div><dt>Output rows</dt><dd>{run.summary?.final_rows?.toLocaleString() ?? 'Unavailable'}</dd></div><div><dt>Columns</dt><dd>{run.summary?.columns?.length ?? rowState.data?.columns?.length ?? 'Unavailable'}</dd></div></dl>
+      {(formatsLoading || formatError || (!formatsLoading && formats.length === 0) || downloadError || downloadMessage) && <div className="etl-download-feedback">
+        {formatsLoading && <p className="etl-loading" role="status"><Spinner />Loading download formats…</p>}
         {formatError && <div className="etl-error" role="alert"><p>{formatError}</p><button className="button button-secondary" type="button" onClick={() => setFormatAttempt((value) => value + 1)}>Retry formats</button></div>}
         {!formatsLoading && !formatError && formats.length === 0 && <p>No download formats are available.</p>}
-        <div className="etl-toolbar"><label>File format <select value={format} onChange={(event) => setFormat(event.target.value)} disabled={formatsLoading || downloading || formats.length === 0}>{formats.map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select></label><button className="button button-primary" type="button" onClick={download} disabled={downloading || formatsLoading || !formats.includes(format)}>{downloading ? 'Preparing download…' : 'Download full result'}</button></div>
         {downloadError && <p className="etl-error" role="alert">{downloadError}</p>}{downloadMessage && <p role="status">{downloadMessage}</p>}
-      </section>
+      </div>}
       <section className="etl-section" aria-labelledby="etl-rows-title"><div className="etl-toolbar"><h2 id="etl-rows-title">Result rows</h2><label>Rows per page <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>{[25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label></div>
-        {rowState.loading && <p role="status">Loading rows…</p>}
+        {rowState.loading && <p className="etl-loading" role="status"><Spinner />Loading rows…</p>}
         {rowState.error && <div className="etl-error" role="alert"><p>{rowState.error}</p><button className="button button-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry rows</button></div>}
-        {rowState.data && <><p className="etl-note" aria-live="polite">Rows {rowState.data.total_count ? (rowState.data.page - 1) * rowState.data.page_size + 1 : 0}–{Math.min(rowState.data.page * rowState.data.page_size, rowState.data.total_count)} of {rowState.data.total_count}. {rowState.data.columns.length} columns.</p><DataTable columns={rowState.data.columns} rows={rowState.data.rows} caption={`Result rows · page ${rowState.data.page}`} /><Pagination page={rowState.data.page} totalPages={rowState.data.total_pages} totalCount={rowState.data.total_count} onPageChange={setPage} label="Result row pages" /></>}
+        {rowState.data && <><p className="etl-note" aria-live="polite">Rows {rowState.data.total_count ? (rowState.data.page - 1) * rowState.data.page_size + 1 : 0}–{Math.min(rowState.data.page * rowState.data.page_size, rowState.data.total_count)} of {rowState.data.total_count}. {rowState.data.columns.length} columns.</p><DataTable columns={rowState.data.columns} rows={rowState.data.rows} caption={`Result rows · page ${rowState.data.page}`} rowOffset={(rowState.data.page - 1) * rowState.data.page_size} selectionKey={`${runId}:${rowState.data.page}:${rowState.data.page_size}`} /><Pagination page={rowState.data.page} totalPages={rowState.data.total_pages} totalCount={rowState.data.total_count} onPageChange={setPage} label="Result row pages" /></>}
       </section>
     </>}
   </div>;

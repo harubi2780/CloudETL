@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-18",
+  "base_url": "http://localhost:8080",
+  "status": "passed",
+  "javascript_assets": [
+    "/static/js/main.9d2cd63a.js"
+  ],
+  "css_assets": [
+    "/static/css/main.66dbf5e1.css"
+  ],
+  "checks": [
+    "/dashboard/pipelines: HTTP 200 React shell",
+    "/dashboard/datasets: HTTP 200 React shell",
+    "/dashboard/runs: HTTP 200 React shell",
+    "/dashboard/results: HTTP 200 React shell",
+    "Final workbook JavaScript and spreadsheet/spinner CSS served successfully",
+    "Django proxy/CSRF endpoint: HTTP 200",
+    "Anonymous ETL API remains protected: HTTP 401"
+  ],
+  "browser_visual_verification": false,
+  "persistent_records_created": false
+}

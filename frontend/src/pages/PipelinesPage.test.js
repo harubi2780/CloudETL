@@ -38,13 +38,24 @@ const library = (datasets = [orders, customers, third, storageOnly], extra = {})
 const sourceSearch = `?datasets=${sourceId}`;
 
 function addOperation(type) {
-  fireEvent.change(screen.getByLabelText('Add operation'), { target: { value: type } });
+  const group = ['select_columns', 'cast_type'].includes(type) ? 'Columns'
+    : type === 'filter_rows' ? 'Filter' : ['join', 'concat'].includes(type) ? 'Combine' : 'Clean';
+  fireEvent.click(screen.getByRole('button', { name: group, exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: `Add ${operations.find((operation) => operation.type === type).label} step` }));
+}
+
+function openLibrary() {
+  fireEvent.click(screen.getByRole('button', { name: /^Sources \(/ }));
+}
+
+function selectStep(index, label) {
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${index}\\s*${label}`) }));
 }
 
 async function ready(search = sourceSearch) {
   const view = render(<PipelinesPage search={search} />);
-  await screen.findByText('First 10 of 12 rows. Types are inferred; phone numbers may lose leading zeros and mixed dates may need review.');
-  await waitFor(() => expect(screen.getByLabelText('Add operation')).toBeEnabled());
+  await screen.findByText(/First 10 of 12 rows · Original data/);
+  await waitFor(() => expect(within(screen.getByRole('toolbar', { name: 'Transformations' })).getAllByRole('button')[0]).toBeEnabled());
   return view;
 }
 
@@ -59,6 +70,17 @@ beforeEach(() => {
   etlApi.submit.mockResolvedValue({ run: { id: runId, status: 'queued' } });
 });
 
+test('a selected numeric cell pre-fills a repeatable replacement without changing source rows', async () => {
+  await ready();
+  fireEvent.click(screen.getByRole('cell', { name: '0' }));
+  addOperation('replace_value');
+  expect(screen.getByRole('heading', { name: 'Configure step 1' })).toHaveFocus();
+  expect(screen.getByLabelText('Replace in column')).toHaveValue('amount');
+  expect(screen.getByLabelText('Old value')).toHaveValue(0);
+  expect(screen.getByRole('cell', { name: '0' })).toBeInTheDocument();
+  expect(etlApi.submit).not.toHaveBeenCalled();
+});
+
 test('extracts actual URL source metadata and shows ten original rows without simulated transformations', async () => {
   render(<PipelinesPage search={sourceSearch} />);
   expect(screen.getByRole('status')).toHaveTextContent('Loading pipeline tools');
@@ -69,7 +91,8 @@ test('extracts actual URL source metadata and shows ten original rows without si
   const table = screen.getByRole('table');
   expect(within(table).getAllByRole('row')).toHaveLength(11);
   expect(within(table).getByRole('columnheader', { name: /amount/ })).toHaveTextContent('float64');
-  expect(screen.getByText(/Data shown above is the original source/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Preview details'));
+  expect(screen.getByText(/Data shown above is the original source/)).toBeVisible();
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
 });
 
@@ -77,16 +100,18 @@ test('loads the source selector and permits CSV/TSV while keeping other uploaded
   let finishLibrary;
   datasetsApi.list.mockImplementationOnce(() => new Promise((resolve) => { finishLibrary = resolve; }));
   render(<PipelinesPage />);
-  await screen.findByLabelText('Add operation');
-  fireEvent.click(screen.getByText('Add saved datasets'));
+  await screen.findByRole('button', { name: 'Sources (0)' });
+  openLibrary();
   expect(screen.getByText('Loading saved datasets…')).toBeInTheDocument();
   await act(async () => { finishLibrary(library()); });
   expect(screen.getByRole('button', { name: 'Add source archive.json' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Add source orders.csv' }));
   expect(await screen.findByRole('cell', { name: 'ORD1' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Add source orders.csv' })).toHaveTextContent('Selected');
-  expect(screen.getByLabelText('Starting dataset')).toBeChecked();
+  expect(screen.queryByRole('region', { name: 'Source library' })).not.toBeInTheDocument();
+  expect(screen.getByText('Starting dataset')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
+  openLibrary();
+  expect(screen.getByRole('button', { name: 'Add source orders.csv' })).toHaveTextContent('Selected');
 });
 
 test('dataset list errors can retry and paginated sources use the requested page', async () => {
@@ -94,8 +119,8 @@ test('dataset list errors can retry and paginated sources use the requested page
   datasetsApi.list.mockResolvedValueOnce(library([orders], { total_pages: 2, total_count: 2 }));
   datasetsApi.list.mockResolvedValueOnce(library([customers], { page: 2, total_pages: 2, total_count: 2 }));
   render(<PipelinesPage />);
-  await screen.findByLabelText('Add operation');
-  fireEvent.click(screen.getByText('Add saved datasets'));
+  await screen.findByRole('button', { name: 'Sources (0)' });
+  openLibrary();
   expect(screen.getByRole('alert')).toHaveTextContent('Dataset list unavailable.');
   fireEvent.click(screen.getByRole('button', { name: 'Retry dataset list' }));
   expect(await screen.findByRole('button', { name: 'Add source orders.csv' })).toBeInTheDocument();
@@ -110,7 +135,7 @@ test('retrying the saved source library preserves the edited pipeline and steps'
   await ready();
   fireEvent.change(screen.getByLabelText('Pipeline name'), { target: { value: 'Keep my draft' } });
   addOperation('drop_duplicates');
-  fireEvent.click(screen.getByText('Add saved datasets'));
+  openLibrary();
   fireEvent.click(screen.getByRole('button', { name: 'Retry dataset list' }));
   await screen.findByRole('button', { name: 'Add source customers.tsv' });
   expect(screen.getByLabelText('Pipeline name')).toHaveValue('Keep my draft');
@@ -124,7 +149,7 @@ test('source preview failure blocks submission and retries extraction', async ()
   render(<PipelinesPage search={sourceSearch} />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Source cannot be read.');
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
-  expect(screen.getByLabelText('Add operation')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Add Clean text step' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
   expect(await screen.findByRole('cell', { name: 'ORD10' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
@@ -147,11 +172,15 @@ test('only server-advertised operations appear in the builder', async () => {
   caps.operations = { string_transform: {}, select_columns: {} };
   etlApi.capabilities.mockResolvedValue(caps);
   await ready();
-  const operation = screen.getByLabelText('Add operation');
-  expect(within(operation).getAllByRole('option')).toHaveLength(3);
-  expect(within(operation).getByRole('option', { name: 'Clean text' })).toBeInTheDocument();
-  expect(within(operation).queryByRole('option', { name: 'Join tables' })).not.toBeInTheDocument();
-  expect(within(operation).queryByRole('option', { name: 'Filter rows' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add Clean text step' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add Remove duplicates step' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Columns', exact: true }));
+  expect(screen.getByRole('button', { name: 'Add Select columns step' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add Convert data type step' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Combine', exact: true }));
+  expect(screen.queryByRole('button', { name: 'Add Join tables step' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Filter', exact: true }));
+  expect(screen.queryByRole('button', { name: 'Add Filter rows step' })).not.toBeInTheDocument();
 });
 
 test('configures, reorders, disables and removes steps while submitting their actual configuration', async () => {
@@ -164,11 +193,14 @@ test('configures, reorders, disables and removes steps while submitting their ac
   fireEvent.change(screen.getByLabelText('Old value'), { target: { value: 'HCM' } });
   fireEvent.change(screen.getByLabelText('New value'), { target: { value: 'Ho Chi Minh' } });
   fireEvent.click(screen.getByRole('button', { name: 'Move step 2 up' }));
-  expect(screen.getByRole('button', { name: '1. Replace values' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: '2. Clean text' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^1\s*Replace values/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^2\s*Clean text/ })).toBeInTheDocument();
+  selectStep(2, 'Clean text');
   fireEvent.click(screen.getByLabelText('Enable step 2'));
+  selectStep(1, 'Replace values');
   fireEvent.click(screen.getByRole('button', { name: 'Remove step 1' }));
-  expect(screen.queryByRole('button', { name: /Replace values/ })).not.toBeInTheDocument();
+  expect(within(screen.getByRole('complementary', { name: 'Pipeline settings' })).queryByRole('button', { name: /Replace values/ })).not.toBeInTheDocument();
+  selectStep(1, 'Clean text');
   expect(screen.getByLabelText('Enable step 1')).not.toBeChecked();
   fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
   await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
@@ -207,6 +239,7 @@ test('selected files remain blocked until used by an enabled join or append step
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
   fireEvent.click(screen.getByLabelText('Enable step 1'));
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('tab', { name: 'customers.tsv' }));
   fireEvent.click(screen.getByRole('button', { name: 'Remove source customers.tsv' }));
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Remove step 1' }));
@@ -219,10 +252,12 @@ test('dropping a referenced column blocks submission until the dependent step mo
   addOperation('select_columns');
   addOperation('string_transform');
   fireEvent.change(screen.getByLabelText('Rule 1 column'), { target: { value: 'city' } });
-  fireEvent.click(screen.getByRole('button', { name: '1. Select columns' }));
+  selectStep(1, 'Select columns');
   fireEvent.click(within(screen.getByRole('group', { name: 'Columns to keep' })).getByLabelText('city'));
   expect(screen.getByText('Step 2: a referenced column is missing or was removed earlier.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
+  selectStep(2, 'Clean text');
+  expect(within(screen.getByRole('region', { name: 'Step settings' })).getByText('a referenced column is missing or was removed earlier.')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Move step 2 up' }));
   expect(screen.queryByText('Step 2: a referenced column is missing or was removed earlier.')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
@@ -284,4 +319,99 @@ test('aborts initial source extraction when the builder unmounts', async () => {
   unmount();
   expect(signal.aborted).toBe(true);
   await act(async () => { finishPreview({ preview }); });
+});
+
+test('a selected source column prefills a clean-text step without changing the source preview', async () => {
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Select column B: city' }));
+  expect(screen.getByText('1 column selected')).toBeInTheDocument();
+  addOperation('string_transform');
+  expect(screen.getByLabelText('Rule 1 column')).toHaveValue('city');
+  expect(screen.getByRole('cell', { name: 'City 1' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
+  await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
+  expect(etlApi.submit.mock.calls[0][0].steps).toEqual([
+    { type: 'string_transform', enabled: true, config: { rules: [{ column: 'city', trim: true, caseMode: 'none' }] } },
+  ]);
+});
+
+test('multiple selected columns prefill type conversion and column-selection steps', async () => {
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Select column B: city' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Select column C: amount' }), { ctrlKey: true });
+  expect(screen.getByText('2 columns selected')).toBeInTheDocument();
+  addOperation('cast_type');
+  expect(screen.getByLabelText('Rule 1 column')).toHaveValue('city');
+  expect(screen.getByLabelText('Rule 2 column')).toHaveValue('amount');
+  addOperation('select_columns');
+  const checks = screen.getByRole('group', { name: 'Columns to keep' });
+  expect(within(checks).getByLabelText('city')).toBeChecked();
+  expect(within(checks).getByLabelText('amount')).toBeChecked();
+  expect(within(checks).getByLabelText('order_id')).not.toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
+  await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
+  expect(etlApi.submit.mock.calls[0][0].steps).toEqual([
+    { type: 'cast_type', enabled: true, config: { conversions: [{ column: 'city', toType: 'string' }, { column: 'amount', toType: 'string' }] } },
+    { type: 'select_columns', enabled: true, config: { selectedColumns: ['city', 'amount'] } },
+  ]);
+});
+
+test('a stale header selection cannot reference a column dropped from the projected schema', async () => {
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Select column B: city' }));
+  addOperation('select_columns');
+  const checks = screen.getByRole('group', { name: 'Columns to keep' });
+  fireEvent.click(within(checks).getByLabelText('city'));
+  fireEvent.click(within(checks).getByLabelText('order_id'));
+  addOperation('cast_type');
+  expect(screen.getByLabelText('Rule 1 column')).toHaveValue('order_id');
+  expect(screen.queryByLabelText('Rule 2 column')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
+});
+
+test('without a header selection steps use valid starting schema defaults', async () => {
+  await ready();
+  addOperation('drop_duplicates');
+  expect(screen.getByLabelText('Rule 1: compare all columns')).toBeChecked();
+  addOperation('string_transform');
+  expect(screen.getByLabelText('Rule 1 column')).toHaveValue('order_id');
+});
+
+test('source sheet keyboard navigation and starting-source selection update the submitted pipeline', async () => {
+  await ready(`?datasets=${sourceId},${customerId},${thirdId}`);
+  const orderTab = screen.getByRole('tab', { name: /orders.csv/ });
+  const customerTab = screen.getByRole('tab', { name: 'customers.tsv' });
+  const extraTab = screen.getByRole('tab', { name: 'extra.csv' });
+  fireEvent.keyDown(orderTab, { key: 'ArrowRight' });
+  expect(customerTab).toHaveFocus();
+  expect(customerTab).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('heading', { name: 'Source preview: customers.tsv' })).toBeInTheDocument();
+  fireEvent.keyDown(customerTab, { key: 'End' });
+  expect(extraTab).toHaveFocus();
+  fireEvent.keyDown(extraTab, { key: 'Home' });
+  expect(orderTab).toHaveFocus();
+  fireEvent.keyDown(orderTab, { key: 'ArrowLeft' });
+  expect(extraTab).toHaveFocus();
+  fireEvent.click(customerTab);
+  fireEvent.click(screen.getByRole('button', { name: 'Use as starting dataset' }));
+  expect(screen.getByText('Starting dataset')).toBeInTheDocument();
+  expect(customerTab).toHaveAccessibleName(/Starting dataset/);
+  addOperation('concat');
+  fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
+  await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
+  expect(etlApi.submit.mock.calls[0][0]).toMatchObject({ datasetId: customerId,
+    steps: [{ type: 'concat', enabled: true, config: { datasetIds: [sourceId, thirdId] } }],
+  });
+});
+
+test('Escape closes the source library and restores focus to its trigger', async () => {
+  await ready();
+  const trigger = screen.getByRole('button', { name: 'Sources (1)' });
+  fireEvent.click(trigger);
+  const library = screen.getByRole('region', { name: 'Source library' });
+  expect(within(library).getByRole('heading', { name: 'Add saved datasets' })).toHaveFocus();
+  fireEvent.keyDown(library, { key: 'Escape' });
+  expect(screen.queryByRole('region', { name: 'Source library' })).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  expect(trigger).toHaveAttribute('aria-expanded', 'false');
 });

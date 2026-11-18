@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import etlApi from '../api/etl';
-import RunsPage from './RunsPage';
+import RunsPage, { RunStatus } from './RunsPage';
 import RunDetailPage from './RunDetailPage';
 import ResultsPage from './ResultsPage';
 import ResultsDetailPage from './ResultsDetailPage';
@@ -36,6 +36,21 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+});
+
+test('run status spins only while running and keeps queued and terminal states distinct', () => {
+  const { rerender } = render(<RunStatus status="queued" />);
+  expect(screen.getByText('Queued')).toBeInTheDocument();
+  expect(screen.queryByTestId('status-spinner')).not.toBeInTheDocument();
+  rerender(<RunStatus status="running" />);
+  expect(screen.getByText('Running')).toBeInTheDocument();
+  expect(screen.getByTestId('status-spinner')).toHaveAttribute('aria-hidden', 'true');
+  for (const status of ['succeeded', 'failed']) {
+    rerender(<RunStatus status={status} />);
+    expect(screen.getByText(status === 'succeeded' ? 'Succeeded' : 'Failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('status-spinner')).not.toBeInTheDocument();
+  }
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
 });
 
 test('loads real run history, pages it, and resets page when filtering', async () => {
@@ -98,11 +113,15 @@ test('polls queued and running runs and stops polling after success', async () =
   const { unmount } = render(<RunDetailPage runId={runId} />);
   await screen.findByText('Queued');
   expect(screen.getByText('Queued')).toBeInTheDocument();
+  expect(screen.queryByTestId('status-spinner')).not.toBeInTheDocument();
   expect(screen.getByText('Waiting for a worker')).toBeInTheDocument();
   await act(async () => { jest.advanceTimersByTime(2000); });
   expect(screen.getByText('Running')).toBeInTheDocument();
+  expect(screen.getByTestId('status-spinner')).toBeInTheDocument();
   await act(async () => { jest.advanceTimersByTime(2000); });
   expect(screen.getByText('Result ready')).toBeInTheDocument();
+  expect(screen.queryByTestId('status-spinner')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Submitted configuration')).not.toHaveAttribute('open');
   expect(screen.getByText('3s')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'View result' })).toHaveAttribute('href', `/dashboard/results/${runId}`);
   expect(screen.getByRole('link', { name: 'Edit and resubmit' })).toHaveAttribute('href', `/dashboard/pipelines?run=${runId}`);
@@ -215,9 +234,18 @@ test('downloads the complete file using advertised formats and prevents duplicat
   expect(etlApi.download).toHaveBeenCalledTimes(1);
   expect(etlApi.download).toHaveBeenCalledWith(runId, 'csv');
   expect(screen.getByRole('button', { name: 'Preparing download…' })).toBeDisabled();
-  expect(screen.getByText('The selected format includes every output row, across all pages.')).toBeInTheDocument();
+  expect(screen.getByText('All rows, all pages.')).toBeInTheDocument();
   await act(async () => { finish(); });
   expect(screen.getByText('The full-file download was handed to your browser.')).toBeInTheDocument();
+});
+
+test('result download controls stay beside the heading instead of using a separate panel', async () => {
+  render(<ResultsDetailPage runId={runId} />);
+  await screen.findByRole('cell', { name: 'Alice' });
+  const header = screen.getByLabelText('Result heading');
+  expect(within(header).getByLabelText('File format')).toBeInTheDocument();
+  expect(within(header).getByRole('button', { name: 'Download full result' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Download full result' })).not.toBeInTheDocument();
 });
 
 test('rows errors retry independently of available download formats', async () => {

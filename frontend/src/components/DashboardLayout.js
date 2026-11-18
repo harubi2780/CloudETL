@@ -4,6 +4,7 @@ import { workspacePages } from '../routes';
 import './DashboardLayout.css';
 
 export default function DashboardLayout({ user, page, onSignOut, children }) {
+  const workbook = page.path === '/dashboard/pipelines';
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -43,12 +44,12 @@ export default function DashboardLayout({ user, page, onSignOut, children }) {
           </button>
         </div>
       </aside>
-      <div className="dashboard-body">
+      <div className={`dashboard-body${workbook ? ' dashboard-body-workbook' : ''}`}>
         <header className="dashboard-topbar">
           <span>Workspace / {page.label}</span>
           <span className="preview-label">CloudETL</span>
         </header>
-        <main className="dashboard-content" id="main-content" tabIndex={-1}>
+        <main className={`dashboard-content${workbook ? ' dashboard-content-workbook' : ''}`} id="main-content" tabIndex={-1}>
           {children}
         </main>
       </div>

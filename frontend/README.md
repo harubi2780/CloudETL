@@ -18,10 +18,12 @@ contract, worker, migration, resource limits, and preserved tool behavior.
 2. Select saved CSV/TSV sources across dataset pages and choose **Create pipeline**,
    or choose **Use uploaded files** after a successful upload. Current processing
    limits are six sources and 25 MiB combined; other formats are marked storage only.
-3. The **Pipelines** page loads each source's first ten rows and inferred columns.
-   Choose the starting dataset, then configure ordered transformation steps,
-   including **Join tables** and **Append rows**. Source previews show original
-   data; transformed rows appear after backend execution.
+3. **Pipelines** opens a workbook-style editor with a compact title bar, a
+   **Columns / Clean / Filter / Combine** action ribbon, original-source sheet
+   tabs, and applied steps/settings on the right. Each source shows its first ten
+   rows and inferred types. Select columns to prefill a transformation, choose
+   the starting source, and configure ordered steps including joins/appends.
+   Source previews remain original data; transformed rows appear after execution.
 4. **Run pipeline** sends validated structured JSON to Django and opens the run.
    **Runs** provides paginated, status-filtered history. Pending run details refresh
    every two seconds while visible; completed or failed runs retain configuration
@@ -34,6 +36,18 @@ The pipeline builder fetches backend capabilities and validates against them;
 Django remains authoritative. Drafts exist only on the current page until submitted,
 not as saved pipeline templates. Numeric inference can remove leading zeros, and
 the preserved tool can turn unrecognized or mixed-format dates into missing values.
+
+The shared data table uses column letters, row numbers, sticky headers, and a
+read-only value bar. Arrow keys inspect cells; Ctrl/Cmd+C copies a selected value.
+In the builder, column headers support single selection, Ctrl/Cmd toggles, Shift
+ranges and Ctrl/Cmd+Shift additive ranges. Selecting cells does not edit source
+data. Transformation actions add configured pipeline steps instead.
+
+The workspace shell uses a 180px desktop sidebar and 44px top bar. Compact upload
+and result controls leave space for data; mobile layouts retain horizontal sheet
+scrolling and stack the editor settings. Running/loading indicators include visible
+status text and respect reduced-motion preferences. This layout update adds no
+dependencies or backend API changes.
 
 ## Development and verification
 
@@ -64,6 +78,9 @@ test Compose workflow.
 
 The local Docker stack was activated and passed live API/worker/storage smoke
 checks on 2026-11-15: [Docker verification](../backend/docs/DOCKER_VERIFICATION_TEMP.md).
+The workbook revision was rebuilt and activated locally on 2026-11-18. See the
+[UI verification report](docs/WORKBOOK_UI_TEST_REPORT_TEMP.md) for tests, runtime
+asset checks and the browser-visual verification limitation.
 
 Source changes do not update already running containers. Backend migration and
 worker activation require the separate approval described by repository AGENTS.md;

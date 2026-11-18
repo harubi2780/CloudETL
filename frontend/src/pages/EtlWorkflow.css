@@ -1,4 +1,4 @@
-.etl-page { display: grid; gap: 1.5rem; min-width: 0; color: #1d2939; }
+.etl-page { display: grid; gap: 12px; min-width: 0; color: #1d2939; font-size: 14px; }
 .etl-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 1.5rem; }
 .etl-field { display: flex; flex-direction: column; gap: .5rem; margin: .65rem 0; font-size: .9rem; min-width: 0; }
 .etl-field input, .etl-field select { min-width: 0; width: 100%; padding: .65rem; min-height: 44px; border: 1px solid #aab5c3; border-radius: 3px; background: white; color: inherit; font: inherit; }
@@ -18,42 +18,54 @@
 .etl-options label { margin: .4rem 0; }
 @media (max-width: 1000px) { .etl-builder { grid-template-columns: 1fr; } }
 .etl-page .page-heading { margin-bottom: 0; }
-.etl-page .page-heading h1 { overflow-wrap: anywhere; }
-.etl-section { min-width: 0; padding: 1.5rem; border: 1px solid #dce2e8; background: #fff; }
-.etl-section h2 { margin: 0 0 1rem; font-size: 1.05rem; }
-.etl-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; }
+.etl-page .page-heading h1 { overflow-wrap: anywhere; font-size: 22px; line-height: 1.3; letter-spacing: -.4px; }
+.etl-page .page-heading p { margin-top: 5px; font-size: 14px; line-height: 1.45; }
+.etl-page .button { min-height: 34px; padding: 6px 10px; font-size: 13px; }
+.etl-section { min-width: 0; padding: 14px; border: 1px solid #dce2e8; background: #fff; }
+.etl-section h2 { margin: 0 0 8px; font-size: 15px; }
+.etl-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
 .etl-toolbar h2 { margin: 0; }
 .etl-toolbar label { display: flex; align-items: center; gap: .75rem; font-size: .875rem; font-weight: 500; }
-.etl-toolbar select { min-height: 2.5rem; padding: .4rem 2rem .4rem .65rem; border: 1px solid #aab5c3; border-radius: 3px; background: #fff; color: inherit; font: inherit; }
+.etl-toolbar select, .etl-download-controls select { min-height: 34px; padding: 5px 28px 5px 8px; border: 1px solid #aab5c3; border-radius: 3px; background: #fff; color: inherit; font: inherit; }
 .etl-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; }
 .etl-actions a, .etl-page > a { font-size: .875rem; }
-.etl-detail-links { margin-top: -.5rem; }
+.etl-detail-links { margin-top: 6px; }
+.etl-result-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.etl-result-heading-copy { flex: 1 1 20rem; min-width: 0; }
+.etl-download-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 8px; max-width: 100%; }
+.etl-download-controls label { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.etl-download-description { flex: 1 0 100%; margin: 0; text-align: right; }
+.etl-download-feedback > :first-child { margin-top: 0; }
+.etl-download-feedback > :last-child { margin-bottom: 0; }
+.etl-loading { display: flex; align-items: center; gap: 7px; margin: 8px 0; font-size: 14px; }
 .etl-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid #e4e7ec; }
 .etl-table { width: 100%; border-collapse: collapse; text-align: left; font-size: .875rem; }
-.etl-table caption { padding: .75rem 1rem; text-align: left; font-weight: 600; background: #f8fafc; }
-.etl-table th, .etl-table td { padding: .85rem 1rem; border-top: 1px solid #e4e7ec; vertical-align: top; }
+.etl-table caption { padding: 7px 8px; text-align: left; font-weight: 600; background: #f8fafc; }
+.etl-table th, .etl-table td { padding: 7px 8px; border-top: 1px solid #e4e7ec; vertical-align: top; }
 .etl-table thead th { background: #f8fafc; color: #475467; font-weight: 600; }
 .etl-table tbody th { font-weight: 500; }
 .etl-data-table td { min-width: 6rem; max-width: 30rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .etl-column-type { display: block; margin-top: .2rem; color: #667085; font-weight: 400; font-size: .72rem; }
 .etl-null { color: #667085; font-size: .8rem; font-style: italic; }
-.etl-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding-top: 1rem; font-size: .875rem; }
+.etl-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-top: 10px; font-size: .875rem; }
 .etl-pagination p { margin: 0; color: #475467; }
-.etl-status { display: inline-block; padding: .25rem .5rem; border-left: 3px solid #667085; background: #f2f4f7; color: #344054; font-size: .8rem; font-weight: 600; }
+.etl-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px; border-left: 3px solid #667085; background: #f2f4f7; color: #344054; font-size: .8rem; font-weight: 600; }
 .etl-status-running { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
 .etl-status-succeeded { border-color: #15803d; background: #f0fdf4; color: #166534; }
 .etl-status-failed { border-color: #b42318; background: #fff5f3; color: #b42318; }
-.etl-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1.25rem; margin: 1.5rem 0; }
-.etl-facts dt { color: #667085; font-size: .8rem; margin-bottom: .4rem; }
+.etl-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 10px 16px; margin: 10px 0; }
+.etl-facts dt { color: #667085; font-size: .8rem; margin-bottom: 3px; }
 .etl-facts dd { margin: 0; font-size: .9rem; overflow-wrap: anywhere; }
-.etl-note { color: #667085; font-size: .875rem; line-height: 1.6; }
-.etl-error { padding: 1rem; margin: .8rem 0; color: #9a231a; border-left: 3px solid #b42318; background: #fff6f5; overflow-wrap: anywhere; }
+.etl-result-facts { margin: 0; }
+.etl-note { color: #667085; font-size: .875rem; line-height: 1.45; }
+.etl-error { padding: 10px 12px; margin: 8px 0; color: #9a231a; border-left: 3px solid #b42318; background: #fff6f5; overflow-wrap: anywhere; }
 .etl-error p { margin: 0 0 .75rem; }
 .etl-error p:last-child { margin-bottom: 0; }
-.etl-empty { padding: 2rem 1rem; text-align: center; color: #667085; }
+.etl-empty { padding: 16px 12px; text-align: center; color: #667085; }
 .etl-empty h2 { color: #344054; }
-.etl-complete { padding-top: 1.5rem; border-top: 1px solid #e4e7ec; }
-.etl-json { max-height: 25rem; overflow: auto; padding: 1rem; background: #f8fafc; font-size: .8rem; line-height: 1.6; }
-.etl-section summary { cursor: pointer; color: #344054; font-size: .9rem; }
+.etl-complete { padding-top: 10px; border-top: 1px solid #e4e7ec; }
+.etl-json { max-height: 25rem; overflow: auto; padding: 12px; background: #f8fafc; font-size: .8rem; line-height: 1.45; }
+.etl-section summary { cursor: pointer; color: #344054; font-size: 14px; }
+.etl-config-details { padding: 12px 14px; }
 .etl-page button:focus-visible, .etl-page a:focus-visible, .etl-page select:focus-visible, .etl-table-scroll:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
-@media (max-width: 640px) { .etl-section { padding: 1rem; } .etl-table th, .etl-table td { padding: .7rem; } .etl-toolbar { align-items: flex-start; } .etl-toolbar label { flex-wrap: wrap; } .etl-facts { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .etl-section { padding: 12px; } .etl-toolbar { align-items: flex-start; } .etl-toolbar label { flex-wrap: wrap; } .etl-facts { grid-template-columns: 1fr 1fr; } .etl-download-controls { justify-content: flex-start; } .etl-download-description { text-align: left; } .etl-page .button, .etl-toolbar select, .etl-download-controls select { min-height: 40px; } }

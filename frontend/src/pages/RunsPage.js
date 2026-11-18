@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import etlApi from '../api/etl';
 import Pagination from '../components/etl/Pagination';
+import Spinner from '../components/etl/Spinner';
 import { Link } from '../navigation';
 import './EtlWorkflow.css';
 
@@ -12,7 +13,7 @@ export function runDate(value) {
 
 export function RunStatus({ status }) {
   const label = ({ queued: 'Queued', running: 'Running', succeeded: 'Succeeded', failed: 'Failed' })[status] || 'Unknown';
-  return <span className={`etl-status etl-status-${status}`}>{label}</span>;
+  return <span className={`etl-status etl-status-${status}`}>{status === 'running' && <Spinner />}{label}</span>;
 }
 
 export function RunHistoryList({ onSessionExpired, resultsOnly = false }) {
@@ -44,7 +45,7 @@ export function RunHistoryList({ onSessionExpired, resultsOnly = false }) {
         </select></label>}
         <button className="button button-secondary" type="button" disabled={state.loading} onClick={() => setAttempt((value) => value + 1)}>Refresh {resultsOnly ? 'results' : 'runs'}</button>
       </div>
-      {state.loading && <p role="status">Loading {resultsOnly ? 'results' : 'runs'}…</p>}
+      {state.loading && <p className="etl-loading" role="status"><Spinner />Loading {resultsOnly ? 'results' : 'runs'}…</p>}
       {state.error && <div className="etl-error" role="alert"><p>{state.error}</p><button className="button button-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button></div>}
       {state.data && state.data.runs.length === 0 && <div className="etl-empty"><h2>{resultsOnly ? 'No completed results yet' : filter ? 'No runs with this status' : 'No runs yet'}</h2><p>{resultsOnly ? 'Results appear here when a run succeeds.' : 'Choose a dataset and submit a pipeline to start processing.'}</p><Link to="/dashboard/pipelines">Open pipeline builder</Link></div>}
       {state.data && state.data.runs.length > 0 && <>

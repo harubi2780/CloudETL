@@ -6,6 +6,9 @@ CloudETL provides public landing and account pages plus an authenticated workspa
 for saved datasets, pipeline configuration, background execution, run history,
 paginated results, and downloads. The UI uses flat surfaces, subtle borders and
 minimal rounding, without a new router or UI dependency.
+The pipeline editor now uses a workbook layout: compact title/ribbon, a central
+source sheet, sheet tabs, and an applied-steps inspector. This presentation update
+does not change the backend API or add dependencies.
 
 File bytes remain in private Django storage; PostgreSQL stores owner-scoped metadata
 and references. React receives metadata, previews, run state, configuration, bounded
@@ -41,7 +44,12 @@ Local activation was subsequently completed on 2026-11-15; see the
 - `src/pages/DatasetsPage.js` owns upload/list/replace/delete, per-file retry,
   selected pipeline sources, and upload-to-pipeline handoff.
 - `src/pages/PipelinesPage.js` owns source loading, original previews, current-page
-  draft state, step ordering and configuration, review, validation and submission.
+  draft state, column/cell selection, the source-library toggle, step ordering,
+  configuration, validation and submission.
+- `src/components/pipeline/WorkbookToolbar.js` groups actions under Columns,
+  Clean, Filter and Combine. `SourceTabs.js` provides keyboard-operable source
+  sheet tabs and the starting-dataset marker. `AppliedStepsPanel.js` provides
+  the right-hand ordered step list and selected step's configuration.
 - `src/components/pipeline/WorkflowStepConfig.js` contains the ten supported
   operation forms. `src/lib/pipeline/workflow.js` contains operation defaults,
   dtype mapping, predicted column schemas, used-source tracking and validation.
@@ -51,10 +59,15 @@ Local activation was subsequently completed on 2026-11-15; see the
   `RunDetailPage.js` provides status, elapsed time, errors and submitted JSON.
 - `src/pages/ResultsPage.js` lists successful runs; `ResultsDetailPage.js` owns
   server-paginated rows, available export formats, and download state.
-- `src/components/etl/DataTable.js` renders previews/results with distinct scalar
-  states; `Pagination.js` provides shared page controls.
-- `src/pages/EtlWorkflow.css` styles the connected ETL pages. `DatasetsPage.css`
-  remains scoped to upload/library controls.
+- `src/components/etl/DataTable.js` and `DataTable.css` provide the read-only sheet,
+  column letters, row numbers, sticky headers, cell inspection/copy and optional
+  column selection. `Pagination.js` provides shared page controls.
+- `src/components/etl/Spinner.js` and `Spinner.css` provide decorative activity
+  indicators with visible status text supplied by their callers; reduced-motion
+  preferences disable rotation.
+- `src/pages/Workbook.css` styles the viewport-oriented pipeline editor.
+  `EtlWorkflow.css` styles the other connected ETL pages. `DatasetsPage.css`
+  remains scoped to the compact upload strip, queue and library controls.
 - `LandingPage.js`, `AuthPage.js`, `DashboardPage.js`, and `NotFoundPage.js` retain
   public/account/overview/error responsibilities. `AuthLayout.js` and
   `DashboardLayout.js` provide account/workspace shells; `App.css` and `index.css`
@@ -129,6 +142,28 @@ switch the displayed source and choose the starting dataset. Failed previews hav
 retry controls; every selected source needs a successful preview before submission.
 Original files remain saved and unchanged.
 
+The desktop editor fits below the workspace top bar. Its title bar contains the
+pipeline name, draft state, **Sources** toggle, upload link and **Run pipeline**.
+The Sources toggle opens a paginated saved-dataset picker; closing it returns
+focus to its trigger. Adding a source opens its original preview and closes the
+picker. Source sheets appear as tabs below the grid, with a **Start** marker for
+the primary input. Switching the visible tab only changes the preview; **Use as
+starting dataset** explicitly changes the pipeline's primary source.
+
+The ribbon organizes the existing ten actions into **Columns**, **Clean**,
+**Filter**, and **Combine**. Selecting headers in the sheet prefills applicable
+new actions: selected fields for column selection/deduplication/cleaning/casts,
+or the first selected field for replacement/dates. Prefill uses fields still
+available after earlier steps. Replacement can also prefill the old value from
+the inspected cell. Every ribbon command adds a repeatable JSON step; it never
+changes the displayed raw cells. The applied-steps panel on the right handles
+selection, enable/disable, movement, removal and the active step's settings.
+
+The bottom status bar shows original preview row counts, enabled steps and the
+single-output scope. Expand **Preview details** for inference/draft limitations
+and the issues disclosure for validation failures that block execution. Submission
+errors remain explicit. No simulated after-state is shown in the sheet.
+
 Ten operation forms generate structured JSON, in execution order:
 
 - Select columns, remove duplicates, handle missing values, convert data type,
@@ -151,6 +186,40 @@ The source table always contains original extracted rows. There is no simulated
 **After** table or client-side ETL executor. Actual transformed rows appear only
 after execution. Predicted column schemas are used to configure downstream steps;
 the backend computes actual types and results.
+
+## Read-only sheet interaction and compact layout
+
+The shared source/result table is a spreadsheet-style inspection surface, not a
+cell editor. Headers show A, B, ... AA letters, original column names and types;
+row numbers stay fixed while scrolling horizontally. Column headers remain sticky
+while scrolling within the sheet. Result numbering uses the server page offset,
+so page two continues after the previous page rather than restarting at one.
+
+Click or focus a cell to inspect its address and full value in the read-only value
+bar. Arrow keys move between cells; Home/End move to the first/last column, with
+Ctrl/Cmd extending that movement to the first/last row. Tab traverses cells and
+leaves the sheet at its edges. Ctrl/Cmd+C copies the selected value; browser copy
+behavior is retained as a fallback when the Clipboard API is unavailable. No copy
+operation edits the stored dataset or pipeline configuration.
+
+In the pipeline builder, clicking a header selects one column. Ctrl/Cmd toggles
+individual columns, Shift selects a contiguous range from the anchor, and
+Ctrl/Cmd+Shift adds that range to the selection. A source change resets selection.
+Result sheets support cell inspection/copy but do not expose transformation
+column-selection controls. NULL, missing fields, empty strings, zero and false
+remain distinct in both sheets.
+
+The shared shell uses a 180px desktop sidebar, a 44px top bar and full-width content
+with compact padding. Dataset upload is a horizontal strip rather than a tall
+dropzone, with tighter queues, toolbars and table cells. At widths up to 640px,
+workspace navigation becomes horizontal, account controls condense, the workbook
+returns to document flow and its settings stack below the sheet. Data stays
+horizontally scrollable; mobile actions retain 40–44px targets. Desktop workbook
+scrolling is contained within its sheet, source picker and settings regions.
+
+Loading/submission/download states and running status display an activity spinner
+beside readable status text. The spinner is decorative for assistive technology,
+and its rotation stops under `prefers-reduced-motion: reduce`.
 
 Drafts exist only on the current page. The builder warns before browser unload
 when a draft has edits; it does not save pipeline templates or promise recovery
@@ -229,8 +298,13 @@ capability loading failures, source preview errors, joins/appends and step order
 configuration reuse, double-submission prevention, polling cleanup/visibility,
 status filtering, paginated empty/populated results, scalar rendering, download
 errors, session expiry, query-preserving login returns and unknown routes. Inspect
-both narrow/wide layouts and keyboard interaction. Review actual output before
+both narrow/wide layouts and keyboard interaction, including header modifier
+selection, cell copying, sheet tabs, source-picker focus and status disclosures.
+Review actual output before
 claiming checks passed; no final execution counts are asserted by this guide.
+Browser inspection for this layout revision was unavailable because browser
+automation could not verify the browser URL; this document does not claim visual
+browser testing.
 
 Use the separate `compose.etl-test.yaml` test project and `config.test_settings`
 for PostgreSQL tests; exact commands and cleanup are in the ETL test report. Its
@@ -250,5 +324,8 @@ docker compose up -d frontend
 
 Starting services may start configured dependencies. Commands here document the
 workflow, not proof of deployment, service activation or migration execution.
+The workbook revision was subsequently rebuilt and activated locally on
+2026-11-18. [The UI verification report](WORKBOOK_UI_TEST_REPORT_TEMP.md) records
+the final checks and the browser-visual verification limitation.
 Installations, migrations, data deletion, commits, pushes and deployments still
 require the applicable repository approvals.

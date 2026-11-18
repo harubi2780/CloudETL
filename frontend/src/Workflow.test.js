@@ -58,8 +58,9 @@ test('follows the real app/API adapters from source selection through join, run,
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select customers.tsv for pipeline' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create pipeline' }));
     expect(await screen.findByRole('heading', { name: 'Source preview: orders.csv' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText('Add operation')).toBeEnabled());
-    fireEvent.change(screen.getByLabelText('Add operation'), { target: { value: 'join' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Combine', exact: true }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add Join tables step' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Add Join tables step' }));
     await userEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
     expect(await screen.findByText('Result ready')).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/dashboard/runs/${runId}`);

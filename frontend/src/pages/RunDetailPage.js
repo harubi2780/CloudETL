@@ -1,4 +1,5 @@
 import useRun from '../hooks/useRun';
+import Spinner from '../components/etl/Spinner';
 import { Link } from '../navigation';
 import { runDate, RunStatus } from './RunsPage';
 import './EtlWorkflow.css';
@@ -16,8 +17,8 @@ export default function RunDetailPage({ runId, onSessionExpired }) {
   const { run, loading, error, checkedAt, retry } = useRun(runId, onSessionExpired);
   return <div className="etl-page">
     <Link to="/dashboard/runs">← All runs</Link>
-    <header className="page-heading"><h1>{run?.name || 'Run details'}</h1><p>Execution status and the configuration submitted for this run.</p></header>
-    {loading && <p role="status">Loading run…</p>}
+    <header className="page-heading"><h1>{run?.name || 'Run details'}</h1></header>
+    {loading && <p className="etl-loading" role="status"><Spinner />Loading run…</p>}
     {error && <div className="etl-error" role="alert"><p>{error}</p><button className="button button-secondary" type="button" onClick={retry}>Retry status</button></div>}
     {run && <>
       <section className="etl-section" aria-label="Run status">
@@ -28,7 +29,7 @@ export default function RunDetailPage({ runId, onSessionExpired }) {
         {run.status === 'succeeded' && <div className="etl-complete"><h2>Result ready</h2><p>{typeof run.summary?.final_rows === 'number' ? `${run.summary.final_rows.toLocaleString()} output rows.` : 'The pipeline finished successfully.'}</p><Link className="button button-primary" to={`/dashboard/results/${run.id}`}>View result</Link></div>}
       </section>
       {run.summary && run.status === 'succeeded' && <section className="etl-section" aria-labelledby="etl-summary-title"><h2 id="etl-summary-title">Run summary</h2><dl className="etl-facts">{[['Input rows', 'initial_rows'], ['Output rows', 'final_rows'], ['Rows removed', 'dropped_rows'], ['Rows added', 'added_rows']].map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{typeof run.summary[key] === 'number' ? run.summary[key].toLocaleString() : 'Unavailable'}</dd></div>)}</dl></section>}
-      {run.configuration && <section className="etl-section" aria-labelledby="etl-config-title"><h2 id="etl-config-title">Submitted configuration</h2><details><summary>Show pipeline JSON</summary><pre className="etl-json">{JSON.stringify(run.configuration, null, 2)}</pre></details></section>}
+      {run.configuration && <details className="etl-section etl-config-details" aria-label="Submitted configuration"><summary>Submitted configuration</summary><pre className="etl-json">{JSON.stringify(run.configuration, null, 2)}</pre></details>}
     </>}
   </div>;
 }
