@@ -1,5 +1,6 @@
 from django.core.exceptions import RequestDataTooBig, TooManyFieldsSent, TooManyFilesSent
 from django.views.decorators.cache import never_cache
+from django.db import DatabaseError
 
 from services.dataset_service import delete_dataset, list_datasets, replace_dataset, require_dataset, upload_dataset
 from views import _json_error, _method_not_allowed
@@ -36,6 +37,8 @@ def collection(request):
         return _json_error(error.code, error.message, error.status, error.fields)
     except (RequestDataTooBig, TooManyFieldsSent, TooManyFilesSent):
         return _json_error("invalid_request", "The upload request is too large or contains too many fields.", 413)
+    except DatabaseError:
+        return _json_error("datasets_unavailable", "The dataset service is temporarily unavailable.", 503)
 
 
 @never_cache
@@ -51,6 +54,8 @@ def replace(request, dataset_id):
         return _json_error(error.code, error.message, error.status, error.fields)
     except (RequestDataTooBig, TooManyFieldsSent, TooManyFilesSent):
         return _json_error("invalid_request", "The upload request is too large or contains too many fields.", 413)
+    except DatabaseError:
+        return _json_error("datasets_unavailable", "The dataset service is temporarily unavailable.", 503)
 
 
 @never_cache
@@ -63,3 +68,5 @@ def detail(request, dataset_id):
         return JsonResponse(delete_dataset(request.user, dataset_id))
     except DatasetError as error:
         return _json_error(error.code, error.message, error.status, error.fields)
+    except DatabaseError:
+        return _json_error("datasets_unavailable", "The dataset service is temporarily unavailable.", 503)

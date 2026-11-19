@@ -11,12 +11,17 @@ from django.core.paginator import EmptyPage, Paginator
 from django.db import transaction
 from django.utils import timezone
 
+from accounts.models import StorageReservation
 from datasets.errors import DatasetError
 from etl import adapter
 from etl.errors import ETLError
 from etl.models import ETLRun
 from etl.serializers import MAX_MEMORY_BYTES, MAX_RESULT_BYTES, PipelineSerializer, source_ids
 from services.dataset_service import public_dataset, require_dataset
+from services.storage_service import (
+    abandon_reservation, cleanup_reservation, ensure_target_idle_locked,
+    owner_storage_lock, reserve_locked,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +65,8 @@ def public_run(run):
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "summary": run.summary if run.status == ETLRun.Status.SUCCEEDED else None,
         "error": {"code": run.error_code, "message": run.error_message} if run.status == ETLRun.Status.FAILED else None,
-        "download_url": f"/api/etl/runs/{run.pk}/download/" if run.status == ETLRun.Status.SUCCEEDED else None,
+        "result_available": run.status == ETLRun.Status.SUCCEEDED and bool(run.result),
+        "download_url": f"/api/etl/runs/{run.pk}/download/" if run.status == ETLRun.Status.SUCCEEDED and run.result else None,
     }
 
 
@@ -132,6 +138,7 @@ def execute_run(run_id, claim_token):
         return
     storage = ETLRun._meta.get_field("result").storage
     stored_name = None
+    reservation = None
     try:
         # Validate persisted data too, including commands executed outside the API.
         serializer = PipelineSerializer(run.configuration)
@@ -151,12 +158,20 @@ def execute_run(run_id, claim_token):
         report = adapter.preview(frame, initial_rows)
         # Use an attempt-specific key so even stale executions never overwrite a result.
         key = f"etl/{run.owner_id}/{run.pk}/{run.claim_token}.parquet"
+        with owner_storage_lock(run.owner):
+            current = ETLRun.objects.select_for_update().get(pk=run.pk)
+            if current.status != ETLRun.Status.RUNNING or str(current.claim_token) != str(claim_token):
+                return
+            reservation = reserve_locked(run.owner, target=f"run:{run.pk}", object_key=key, size_bytes=len(content))
         stored_name = storage.save(key, ContentFile(content))
-        published = ETLRun.objects.filter(pk=run.pk, status=ETLRun.Status.RUNNING, claim_token=claim_token).update(
-            status=ETLRun.Status.SUCCEEDED, result=stored_name, size_bytes=len(content),
-            sha256=hashlib.sha256(content).hexdigest(), summary=report, finished_at=timezone.now())
+        with owner_storage_lock(run.owner):
+            published = ETLRun.objects.filter(pk=run.pk, status=ETLRun.Status.RUNNING, claim_token=claim_token).update(
+                status=ETLRun.Status.SUCCEEDED, result=stored_name, size_bytes=len(content),
+                sha256=hashlib.sha256(content).hexdigest(), summary=report, finished_at=timezone.now())
+            if published:
+                StorageReservation.objects.filter(pk=reservation.pk).delete()
         if published:
-            stored_name = None
+            reservation = None
     except (ETLError, DatasetError) as error:
         fail_run(run.pk, claim_token, error.code, error.message)
     except Exception:
@@ -164,16 +179,45 @@ def execute_run(run_id, claim_token):
         logger.exception("ETL execution failed for run %s", run.pk)
         fail_run(run.pk, claim_token, "execution_failed", "ETL execution failed. Check the input data or contact support.")
     finally:
-        if stored_name:
+        if reservation:
             try:
-                storage.delete(stored_name)
+                abandon_reservation(reservation, storage, object_key=stored_name or key)
             except Exception:
-                logger.exception("ETL orphan result cleanup failed for run %s", run.pk)
+                logger.exception("ETL result reservation %s requires reconciliation", reservation.pk)
+
+
+def delete_result(user, run_id):
+    with owner_storage_lock(user):
+        try:
+            run = ETLRun.objects.select_for_update().get(owner=user, pk=run_id)
+        except ETLRun.DoesNotExist as error:
+            raise ETLError("ETL run not found.", code="run_not_found", status=404) from error
+        if run.status != ETLRun.Status.SUCCEEDED:
+            raise ETLError("This run has no completed result.", code="result_not_ready", status=409)
+        if not run.result:
+            return {"deleted": True}
+        target = f"run:{run.pk}"
+        ensure_target_idle_locked(user, target)
+        storage = run.result.storage
+        reservation = StorageReservation.objects.create(
+            owner=user, target=target, object_key=run.result.name, size_bytes=run.size_bytes,
+            reserved_bytes=0, state=StorageReservation.State.CLEANUP,
+        )
+        run.result = ""
+        run.size_bytes = 0
+        run.sha256 = ""
+        run.save(update_fields=["result", "size_bytes", "sha256"])
+    result = {"deleted": True}
+    if not cleanup_reservation(reservation, storage):
+        result["warning"] = "Stored result cleanup is pending. Its space remains counted until cleanup succeeds. Contact support."
+    return result
 
 
 def result_content(run):
     if run.status != ETLRun.Status.SUCCEEDED:
         raise ETLError("This run has no completed result.", code="result_not_ready", status=409)
+    if not run.result:
+        raise ETLError("This result file has been deleted. The run history is still available.", code="result_deleted", status=404)
     try:
         with run.result.open("rb") as source:
             content = source.read(MAX_RESULT_BYTES + 1)

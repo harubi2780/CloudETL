@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "assertions": 140,
+  "checks": [
+    "Free500MiB/Premium2GiB catalog, authenticated demo mode, CSRF and server-owned price",
+    "failure/cancellation, pending reuse, owner isolation, successful upgrade, idempotency and 30-day renewal",
+    "expiry returns Free without deleting files, persistent owner-only history and test-file cleanup"
+  ],
+  "usernames": [
+    "billing_demo_fced3915ec50_owner",
+    "billing_demo_fced3915ec50_other"
+  ],
+  "order_ids": [
+    "b302a702-32a2-45d7-bf2f-7c7c6a08eba9",
+    "7c804aec-2acb-4a7b-a18e-681e0fac7995",
+    "13346ad7-eb69-4217-a8ec-7f6a64cc6a3b",
+    "13346ad7-eb69-4217-a8ec-7f6a64cc6a3b",
+    "ce4ae9c9-5588-4251-a0bb-a68af51cf4fb"
+  ],
+  "test_file_removed": true,
+  "dataset_id": "1a1c3cd0-12e3-459c-a6aa-571c2db6fb97",
+  "duration_seconds": 5.489
+}

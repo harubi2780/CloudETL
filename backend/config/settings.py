@@ -58,6 +58,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "datasets.apps.DatasetsConfig",
     "etl.apps.EtlConfig",
+    "accounts.apps.AccountsConfig",
+    "billing.apps.BillingConfig",
 ]
 
 MIDDLEWARE = [
@@ -128,6 +130,14 @@ MEDIA_ROOT = Path(os.getenv("DATASET_LEGACY_STORAGE_ROOT", str(BASE_DIR / "media
 DATASET_MAX_FILE_SIZE_BYTES = int(os.getenv("DATASET_MAX_FILE_SIZE_BYTES", str(25 * 1024 * 1024)))
 if not 0 < DATASET_MAX_FILE_SIZE_BYTES <= 25 * 1024 * 1024:
     raise ImproperlyConfigured("DATASET_MAX_FILE_SIZE_BYTES must be between 1 and 26214400; coordinate larger limits with the proxy and validators.")
+try:
+    ACCOUNT_STORAGE_LIMIT_BYTES = int(os.getenv("ACCOUNT_STORAGE_LIMIT_BYTES", "524288000"))
+except (TypeError, ValueError) as error:
+    raise ImproperlyConfigured("ACCOUNT_STORAGE_LIMIT_BYTES must be an integer between 1 and 9223372036854775807.") from error
+if not 1 <= ACCOUNT_STORAGE_LIMIT_BYTES <= 2**63 - 1:
+    raise ImproperlyConfigured("ACCOUNT_STORAGE_LIMIT_BYTES must be between 1 and 9223372036854775807.")
+# The billing simulator is disabled unless a development environment opts in.
+BILLING_DEMO_ENABLED = env_bool("BILLING_DEMO_ENABLED", False)
 FILE_UPLOAD_HANDLERS = [
     "datasets.upload_handlers.DatasetSizeLimitHandler",
     "django.core.files.uploadhandler.MemoryFileUploadHandler",

@@ -6,6 +6,23 @@ CloudETL provides public landing and account pages plus an authenticated workspa
 for saved datasets, pipeline configuration, background execution, run history,
 paginated results, and downloads. The UI uses flat surfaces, subtle borders and
 minimal rounding, without a new router or UI dependency.
+The protected `/dashboard/account` page now shows read-only profile/status, plan,
+and server-calculated storage. Datasets displays the same quota meter. Result-file
+deletion requires confirmation and preserves run history. See the
+[account storage handoff](../../backend/docs/ACCOUNT_STORAGE_IMPLEMENTATION_TEMP.md)
+and [verification report](../../backend/docs/ACCOUNT_STORAGE_TEST_REPORT_TEMP.md);
+the accounts migration and updated Docker stack were activated locally with user
+approval on 2026-11-18. Future installations must apply that migration as well.
+The Account page now also contains server-backed Free/Premium plans and simulated
+checkout, renewal, explicit expiry and recent order history. Free defaults to
+500 MiB; Premium grants 2 GiB for 30 demo days at a simulated 59,000 VND, without
+real money or a MoMo connection. This revision was activated locally on 2026-11-19.
+The account view groups profile and storage details into compact panels. Billing
+uses a focused checkout dialog with a visible no-charge test notice; payment
+simulation controls and full order references are collapsed until requested.
+Read the
+[billing demo handoff](../../backend/docs/BILLING_DEMO_IMPLEMENTATION_TEMP.md)
+for API/feature-flag behavior, migration scope and the production-disabled boundary.
 The pipeline editor now uses a workbook layout: compact title/ribbon, a central
 source sheet, sheet tabs, and an applied-steps inspector. This presentation update
 does not change the backend API or add dependencies.

@@ -467,3 +467,46 @@ test('requires fresh pipeline selection after replacing a source', async () => {
   expect(screen.getByRole('button', { name: 'Create pipeline' })).toBeDisabled();
   expect(screen.queryByRole('list', { name: 'Selected pipeline sources' })).not.toBeInTheDocument();
 });
+
+const quotaStorage = { limit_bytes: 10 * 1024 * 1024, used_bytes: 2 * 1024 * 1024,
+  uploaded_bytes: 1024 * 1024, result_bytes: 1024 * 1024, pending_cleanup_bytes: 0,
+  reserved_bytes: 0, available_bytes: 8 * 1024 * 1024, over_limit: false };
+
+test('shows compact account storage from the dataset list without requiring a separate account request', async () => {
+  datasetsApi.list.mockResolvedValueOnce(listResponse([], { storage: quotaStorage }));
+  render(<DatasetsPage />);
+  const usage = await screen.findByRole('region', { name: 'Storage usage' });
+  expect(within(usage).getByText('2 MiB of 10 MiB used')).toBeInTheDocument();
+  expect(within(usage).getByText('8 MiB available')).toBeInTheDocument();
+  expect(usage).toHaveClass('storage-usage-compact');
+});
+
+test('old dataset responses without storage do not display an invented quota', async () => {
+  render(<DatasetsPage />);
+  await screen.findByText('No datasets yet');
+  expect(screen.queryByRole('region', { name: 'Storage usage' })).not.toBeInTheDocument();
+});
+
+test('upload refresh updates the quota indicator using server totals', async () => {
+  datasetsApi.list.mockResolvedValueOnce(listResponse([], { storage: quotaStorage }));
+  datasetsApi.list.mockResolvedValueOnce(listResponse([dataset], { storage: { ...quotaStorage, used_bytes: 3 * 1024 * 1024, available_bytes: 7 * 1024 * 1024 } }));
+  datasetsApi.upload.mockResolvedValueOnce({ dataset });
+  render(<DatasetsPage />);
+  await screen.findByText('2 MiB of 10 MiB used');
+  select([new File(['id\n1\n'], 'new.csv')]);
+  fireEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+  expect(await screen.findByText('3 MiB of 10 MiB used')).toBeInTheDocument();
+  expect(screen.getByText('7 MiB available')).toBeInTheDocument();
+});
+
+test('a failed dataset refresh marks previously loaded usage as stale', async () => {
+  datasetsApi.list.mockResolvedValueOnce(listResponse([], { storage: quotaStorage }));
+  datasetsApi.list.mockRejectedValueOnce({ message: 'List refresh unavailable.' });
+  datasetsApi.upload.mockResolvedValueOnce({ dataset });
+  render(<DatasetsPage />);
+  await screen.findByText('2 MiB of 10 MiB used');
+  select([new File(['id\n1\n'], 'new.csv')]);
+  fireEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+  expect(await screen.findByText('Last loaded usage. Refresh datasets to update.')).toBeInTheDocument();
+  expect(screen.getByText('2 MiB of 10 MiB used')).toBeInTheDocument();
+});

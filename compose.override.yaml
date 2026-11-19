@@ -26,6 +26,8 @@ services:
 
   backend:
     environment: &local-storage-environment
+      # Development-only checkout simulator; explicitly set false to disable.
+      BILLING_DEMO_ENABLED: ${BILLING_DEMO_ENABLED:-true}
       AWS_S3_ENDPOINT_URL: http://rustfs:9000
       AWS_S3_ADDRESSING_STYLE: path
       AWS_ACCESS_KEY_ID: ${RUSTFS_APP_ACCESS_KEY:?Set RUSTFS_APP_ACCESS_KEY in the root .env file}

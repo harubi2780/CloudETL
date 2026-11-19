@@ -5,6 +5,7 @@ from django.urls import include, path
 
 import views
 from datasets import views as dataset_views
+from accounts import views as account_views
 
 auth_patterns = (
     [
@@ -20,6 +21,8 @@ auth_patterns = (
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include(auth_patterns, namespace="accounts")),
+    path("api/account/", account_views.profile, name="account-profile"),
+    path("api/billing/", include("billing.urls")),
     path("api/etl/", include("etl.urls")),
     path("api/datasets/", dataset_views.collection, name="datasets"),
     path("api/datasets/<uuid:dataset_id>/", dataset_views.detail, name="dataset-detail"),

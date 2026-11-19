@@ -12,7 +12,8 @@ ALLOWED_HOSTS = ["testserver", "localhost"]
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
-    "datasets.apps.DatasetsConfig", "etl.apps.EtlConfig",
+    "datasets.apps.DatasetsConfig", "etl.apps.EtlConfig", "accounts.apps.AccountsConfig",
+    "billing.apps.BillingConfig",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware", "django.contrib.sessions.middleware.SessionMiddleware",
@@ -48,6 +49,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_TZ = True
 TIME_ZONE = "UTC"
 DATASET_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+ACCOUNT_STORAGE_LIMIT_BYTES = 524288000
+BILLING_DEMO_ENABLED = True
 FILE_UPLOAD_HANDLERS = [
     "datasets.upload_handlers.DatasetSizeLimitHandler", "django.core.files.uploadhandler.MemoryFileUploadHandler",
     "django.core.files.uploadhandler.TemporaryFileUploadHandler",

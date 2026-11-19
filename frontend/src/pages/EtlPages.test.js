@@ -7,7 +7,7 @@ import ResultsDetailPage from './ResultsDetailPage';
 
 jest.mock('../api/etl', () => ({
   __esModule: true,
-  default: { listRuns: jest.fn(), getRun: jest.fn(), rows: jest.fn(), capabilities: jest.fn(), download: jest.fn() },
+  default: { listRuns: jest.fn(), getRun: jest.fn(), rows: jest.fn(), capabilities: jest.fn(), download: jest.fn(), deleteResult: jest.fn() },
 }));
 
 const runId = '10000000-0000-0000-0000-000000000001';
@@ -32,6 +32,7 @@ beforeEach(() => {
   etlApi.rows.mockResolvedValue(rowPage());
   etlApi.capabilities.mockResolvedValue({ outputFormats: ['parquet', 'csv', 'tsv', 'json', 'xlsx'] });
   etlApi.download.mockResolvedValue(undefined);
+  etlApi.deleteResult.mockResolvedValue({ deleted: true });
 });
 
 afterEach(() => {
@@ -307,4 +308,124 @@ test('result changes abort old row requests and ignore a previous download compl
   expect(screen.queryByText('The full-file download was handed to your browser.')).not.toBeInTheDocument();
   unmount();
   expect(etlApi.rows.mock.calls[1][1].signal.aborted).toBe(true);
+});
+
+test('result file deletion requires confirmation and cancellation restores focus without deleting', async () => {
+  render(<ResultsDetailPage runId={runId} />);
+  await screen.findByRole('cell', { name: 'Alice' });
+  const trigger = screen.getByRole('button', { name: 'Delete result file' });
+  fireEvent.click(trigger);
+  const confirmation = screen.getByRole('region', { name: 'Delete result file?' });
+  expect(confirmation).toHaveTextContent('original source files remain saved');
+  expect(etlApi.deleteResult).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Cancel deletion' })).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'Download full result' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel deletion' }));
+  expect(screen.queryByRole('region', { name: 'Delete result file?' })).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  expect(etlApi.deleteResult).not.toHaveBeenCalled();
+});
+
+test('confirmed deletion prevents duplicate requests and removes only the result view', async () => {
+  let finish;
+  etlApi.deleteResult.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  render(<ResultsDetailPage runId={runId} />);
+  await screen.findByRole('cell', { name: 'Alice' });
+  const rowSignal = etlApi.rows.mock.calls[0][1].signal;
+  fireEvent.click(screen.getByRole('button', { name: 'Delete result file' }));
+  const confirm = screen.getByRole('button', { name: 'Confirm file deletion' });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  expect(etlApi.deleteResult).toHaveBeenCalledTimes(1);
+  expect(etlApi.deleteResult).toHaveBeenCalledWith(runId);
+  expect(screen.getByRole('button', { name: 'Deleting result file…' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Cancel deletion' })).toBeDisabled();
+  await act(async () => { finish({ deleted: true, warning: 'Stored file cleanup will be retried.' }); });
+  expect(screen.getByRole('heading', { name: 'Result file removed' })).toHaveFocus();
+  expect(screen.getByText('Result file deleted.')).toBeInTheDocument();
+  expect(screen.getByText('Stored file cleanup will be retried.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Download full result' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Delete result file' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('cell', { name: 'Alice' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Run details' })).toHaveAttribute('href', `/dashboard/runs/${runId}`);
+  expect(screen.getByRole('link', { name: 'Edit and resubmit' })).toBeInTheDocument();
+  expect(screen.getByText('Output rows')).toBeInTheDocument();
+  expect(rowSignal.aborted).toBe(true);
+});
+
+test('deletion errors retain the file and confirmation for retry', async () => {
+  etlApi.deleteResult.mockRejectedValueOnce({ message: 'Storage unavailable.' });
+  render(<ResultsDetailPage runId={runId} />);
+  await screen.findByRole('cell', { name: 'Alice' });
+  fireEvent.click(screen.getByRole('button', { name: 'Delete result file' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm file deletion' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Storage unavailable.');
+  expect(screen.getByRole('cell', { name: 'Alice' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Confirm file deletion' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm file deletion' }));
+  expect(await screen.findByText('Result file deleted.')).toBeInTheDocument();
+  expect(etlApi.deleteResult).toHaveBeenCalledTimes(2);
+});
+
+test('unauthorized deletion expires the session and does not report success', async () => {
+  const expired = jest.fn();
+  etlApi.deleteResult.mockRejectedValue({ status: 401, message: 'Please sign in again.' });
+  render(<ResultsDetailPage runId={runId} onSessionExpired={expired} />);
+  await screen.findByRole('cell', { name: 'Alice' });
+  fireEvent.click(screen.getByRole('button', { name: 'Delete result file' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm file deletion' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Please sign in again.');
+  expect(expired).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Result file deleted.')).not.toBeInTheDocument();
+});
+
+test('removed result metadata skips row and format requests but preserves summary and run links', async () => {
+  etlApi.getRun.mockResolvedValue({ run: { ...run, result_available: false, download_url: null } });
+  render(<ResultsDetailPage runId={runId} />);
+  expect(await screen.findByRole('heading', { name: 'Result file removed' })).toBeInTheDocument();
+  expect(etlApi.rows).not.toHaveBeenCalled();
+  expect(etlApi.capabilities).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Download full result' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Delete result file' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Run details' })).toBeInTheDocument();
+  expect(screen.getByText('Output rows')).toBeInTheDocument();
+});
+
+test('removed outputs have no view-result links in run or result history', async () => {
+  etlApi.listRuns.mockResolvedValue(listing([{ ...run, result_available: false }]));
+  const { unmount } = render(<RunsPage />);
+  await screen.findByRole('rowheader', { name: 'Customer cleanup' });
+  expect(screen.getByText('File removed')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'View result' })).not.toBeInTheDocument();
+  unmount();
+  render(<ResultsPage />);
+  await screen.findByRole('rowheader', { name: 'Customer cleanup' });
+  expect(screen.getByRole('link', { name: 'Customer cleanup' })).toHaveAttribute('href', `/dashboard/runs/${runId}`);
+  expect(screen.queryByRole('link', { name: 'View result' })).not.toBeInTheDocument();
+});
+
+test('run detail preserves configuration and summary when its output is removed', async () => {
+  etlApi.getRun.mockResolvedValue({ run: { ...run, result_available: false } });
+  render(<RunDetailPage runId={runId} />);
+  expect(await screen.findByRole('heading', { name: 'Result file removed' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'View result' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Submitted configuration')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Run summary' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Edit and resubmit' })).toBeInTheDocument();
+});
+
+test('an old deletion completion cannot remove a newly opened result', async () => {
+  let finish;
+  etlApi.deleteResult.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const { rerender } = render(<ResultsDetailPage runId={runId} />);
+  await screen.findByRole('cell', { name: 'Alice' });
+  fireEvent.click(screen.getByRole('button', { name: 'Delete result file' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm file deletion' }));
+  etlApi.getRun.mockResolvedValueOnce({ run: { ...run, id: secondId, name: 'Another cleanup' } });
+  etlApi.rows.mockResolvedValueOnce(rowPage({ rows: [{ name: 'Bob' }] }));
+  rerender(<ResultsDetailPage runId={secondId} />);
+  await screen.findByRole('cell', { name: 'Bob' });
+  await act(async () => { finish({ deleted: true }); });
+  expect(screen.queryByRole('heading', { name: 'Result file removed' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Delete result file' })).toBeEnabled();
 });

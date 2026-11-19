@@ -83,6 +83,11 @@ def run_detail(request, run_id):
     return JsonResponse({"run": {**etl_service.public_run(run), "configuration": run.configuration}})
 
 
+@endpoint(["DELETE"])
+def result_file(request, run_id):
+    return JsonResponse(etl_service.delete_result(request.user, run_id))
+
+
 @endpoint(["GET"])
 def rows(request, run_id):
     query_parameters(request, ("page", "page_size"))

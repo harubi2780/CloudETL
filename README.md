@@ -7,6 +7,15 @@ connects uploads, source previews, pipeline configuration, runs and paginated re
 The local Docker stack was activated and tested on 2026-11-15:
 [live Docker verification](backend/docs/DOCKER_VERIFICATION_TEMP.md).
 
+Account storage now has a 500 MiB Free default allowance across uploads and saved ETL
+results. The Account page includes a local Premium demo: 2 GiB for a simulated
+59,000 VND / 30 days, with no real payment or MoMo connection.
+The billing demo was activated locally on 2026-11-19; see the
+[billing handoff](backend/docs/BILLING_DEMO_IMPLEMENTATION_TEMP.md) and
+[verification report](backend/docs/BILLING_DEMO_TEST_REPORT_TEMP.md).
+See the [temporary account storage handoff](backend/docs/ACCOUNT_STORAGE_IMPLEMENTATION_TEMP.md)
+and [test report](backend/docs/ACCOUNT_STORAGE_TEST_REPORT_TEMP.md) for activation status.
+
 CloudETL là đồ án môn Điện toán đám mây tại trường đại học. Mục tiêu dự kiến là xây dựng dịch vụ ETL theo mô hình SaaS; các tính năng ETL vẫn đang được phát triển.
 
 ## Công nghệ và mã nguồn

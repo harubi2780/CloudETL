@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import datasetsApi from '../api/datasets';
+import StorageUsage from '../components/StorageUsage';
 import { navigate } from '../navigation';
 import './DatasetsPage.css';
 
@@ -338,6 +339,8 @@ export default function DatasetsPage({ onSessionExpired }) {
         <h1>Datasets</h1>
         <p>Upload and manage source files for your workflows.</p>
       </div>
+
+      <StorageUsage storage={data?.storage} compact stale={listing.status === 'error'} refreshing={listing.status === 'loading'} />
 
       <section className="datasets-upload" aria-labelledby="dataset-upload-title">
         <h2 id="dataset-upload-title">Upload datasets</h2>

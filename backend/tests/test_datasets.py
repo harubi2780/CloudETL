@@ -121,7 +121,7 @@ class DatasetApiTests(TestCase):
         response = self.client.get(self.endpoint)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(set(data), {"datasets", "page", "total_pages", "total_count", "limits"})
+        self.assertEqual(set(data), {"datasets", "page", "total_pages", "total_count", "limits", "storage"})
         self.assertEqual(data["total_count"], 5)
         self.assertEqual(data["limits"], {
             "max_file_size_bytes": settings.DATASET_MAX_FILE_SIZE_BYTES,
@@ -496,12 +496,12 @@ class DatasetApiTests(TestCase):
     def test_storage_cleanup_failure_reports_success_with_warning(self):
         dataset = self.management_dataset()
         storage = dataset.file.storage
-        with patch.object(storage, "delete", side_effect=OSError("private detail")), self.assertLogs("services.dataset_service", level="ERROR"):
+        with patch.object(storage, "delete", side_effect=OSError("private detail")), self.assertLogs("services", level="ERROR"):
             response = self.replace_file(dataset)
         self.assertEqual(response.status_code, 200)
         self.assertIn("warning", response.json())
         self.assertNotIn("private detail", response.content.decode())
-        with patch.object(storage, "delete", side_effect=OSError("private detail")), self.assertLogs("services.dataset_service", level="ERROR"):
+        with patch.object(storage, "delete", side_effect=OSError("private detail")), self.assertLogs("services", level="ERROR"):
             response = self.delete_file(dataset)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["deleted"])

@@ -1,0 +1,38 @@
+{
+  "status": "passed",
+  "base_url": "http://localhost:8080",
+  "assertions": 273,
+  "checks": [
+    "fresh independent accounts and real CSRF/session authentication",
+    "original sample CSV/TSV upload and five/four-row extraction",
+    "ordered join/deduplicate/mean/replace/select sample pipeline and all five full-file exports",
+    "63-row server pagination at 25/50/100 rows and complete 63-row CSV download",
+    "two-source append creates one ordered 66-row result",
+    "ownership isolation, anonymous 401 responses and real middleware CSRF403 rejection",
+    "frontend pipeline/history/results and UUID deep links serve the React shell"
+  ],
+  "usernames": [
+    "cloudetl_smoke_619a9884211c",
+    "cloudetl_smoke_619a9884211c_outsider"
+  ],
+  "dataset_ids": {
+    "orders": "62191e87-1e70-4f21-9c04-957790a195ea",
+    "customers": "10d7b902-d016-41d5-a0a8-526b7fee0d9a",
+    "synthetic63": "34869e13-85c2-4870-91e4-159b17fd0041",
+    "synthetic_extra3": "917af904-e916-42d7-8a4f-bfc8c251c7bf"
+  },
+  "run_ids": {
+    "sample_cleanup": "0f7fd504-99cf-47e0-82b0-66c5caad944a",
+    "pagination63": "8961d12b-97e2-4c84-8fc1-139caae883f9",
+    "append66": "487bc11a-fb28-4e74-96fc-c1c8ada96124"
+  },
+  "tested_formats": [
+    "parquet",
+    "csv",
+    "tsv",
+    "json",
+    "xlsx"
+  ],
+  "records_retained": true,
+  "duration_seconds": 17.973
+}

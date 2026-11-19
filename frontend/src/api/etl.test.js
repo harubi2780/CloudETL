@@ -1,4 +1,5 @@
 import etlApi from './etl';
+import { request } from './client';
 
 beforeEach(() => { global.fetch = jest.fn(); });
 
@@ -10,6 +11,16 @@ test('uses the shared JSON request layer for versioned run and pagination reques
   expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/runs/owned-id/rows/?page=3&page_size=50', expect.anything());
   await etlApi.submit({ name: 'Clean', datasetId: 'id', steps: [] });
   expect(global.fetch.mock.calls.at(-1)[1]).toMatchObject({ method: 'POST', body: '{"name":"Clean","datasetId":"id","steps":[]}' });
+});
+
+test('deletes only a result file through the shared credentialed CSRF request layer', async () => {
+  global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ csrfToken: 'result-delete-csrf' }) });
+  await request('/api/auth/csrf/');
+  global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ deleted: true }) });
+  await expect(etlApi.deleteResult('owned-id')).resolves.toEqual({ deleted: true });
+  expect(global.fetch).toHaveBeenCalledWith('/api/etl/runs/owned-id/result/', expect.objectContaining({
+    method: 'DELETE', credentials: 'same-origin', headers: expect.objectContaining({ 'X-CSRFToken': 'result-delete-csrf' }),
+  }));
 });
 
 test('downloads a binary full file and releases the object URL', async () => {

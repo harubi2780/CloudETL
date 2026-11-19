@@ -12,6 +12,7 @@ const etlApi = {
     return request(`/api/etl/runs/?${params}`, { signal });
   },
   getRun(id, { signal } = {}) { return request(runUrl(id), { signal }); },
+  deleteResult(id) { return request(`${runUrl(id)}result/`, { method: 'DELETE' }); },
   rows(id, { page = 1, pageSize = 25, signal } = {}) {
     return request(`${runUrl(id)}rows/?page=${page}&page_size=${pageSize}`, { signal });
   },

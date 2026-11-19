@@ -4,6 +4,7 @@ import DashboardLayout from './components/DashboardLayout';
 import useSession from './hooks/useSession';
 import { navigate, useLocation } from './navigation';
 import AuthPage from './pages/AuthPage';
+import AccountPage from './pages/AccountPage';
 import DashboardPage from './pages/DashboardPage';
 import DatasetsPage from './pages/DatasetsPage';
 import LandingPage from './pages/LandingPage';
@@ -84,6 +85,7 @@ function App() {
     <DashboardLayout user={session.user} page={page} onSignOut={session.signOut}>
       {pathname === '/dashboard' ? <DashboardPage user={session.user} />
         : pathname === '/dashboard/datasets' ? <DatasetsPage onSessionExpired={session.expire} />
+        : pathname === '/dashboard/account' ? <AccountPage onSessionExpired={session.expire} />
         : pathname === '/dashboard/pipelines' ? <PipelinesPage key={location.search} search={location.search} onSessionExpired={session.expire} />
         : page.path === '/dashboard/runs' ? page.runId ? <RunDetailPage key={page.runId} runId={page.runId} onSessionExpired={session.expire} /> : <RunsPage onSessionExpired={session.expire} />
         : page.runId ? <ResultsDetailPage key={page.runId} runId={page.runId} onSessionExpired={session.expire} /> : <ResultsPage onSessionExpired={session.expire} />}

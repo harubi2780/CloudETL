@@ -26,6 +26,12 @@ export const workspacePages = [
     title: 'Results',
     description: 'Find the outputs of your completed workflows.',
   },
+  {
+    path: '/dashboard/account',
+    label: 'Account',
+    title: 'Account',
+    description: 'View your profile, plan, and storage allowance.',
+  },
 ];
 
 export function normalizePath(path) {

@@ -1,0 +1,34 @@
+{
+  "status": "passed",
+  "base_url": "http://localhost:8080",
+  "assertions": 181,
+  "checks": [
+    "active Free account, server-configured default allowance, account deep link and production assets",
+    "real private storage upload, ten-row preview, worker Parquet publication, pagination and quota totals",
+    "internal entitlement extension point, full-quota HTTP 413, replacement growth rejection and equal-size replacement",
+    "profile/ownership/CSRF isolation, result deletion, retained history, deleted-read rejection and capacity reuse"
+  ],
+  "usernames": [
+    "quota_smoke_1259550fa346_owner",
+    "quota_smoke_1259550fa346_other"
+  ],
+  "dataset_ids": [
+    "e80bfcb1-d0d1-4811-9e54-28f88833ac02",
+    "e720c418-e8f1-47fd-99a6-03f330b825e3"
+  ],
+  "run_ids": [
+    "86720b4b-9fc5-4521-8830-38616c9ff008"
+  ],
+  "test_files_removed": true,
+  "frontend_assets": [
+    "/static/js/main.d1fc9129.js",
+    "/static/css/main.f26a915c.css"
+  ],
+  "measured_bytes": {
+    "upload": 315,
+    "parquet_result": 1953,
+    "combined": 2268
+  },
+  "test_allowance_restored_bytes": 524288000,
+  "duration_seconds": 9.424
+}

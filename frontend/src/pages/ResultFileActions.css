@@ -1,0 +1,7 @@
+.etl-result-file-actions > .etl-note { margin-bottom: 0; }
+.etl-result-file-actions .etl-result-delete-button { color: #9a231a; border-color: #cda79f; background: #fff; }
+.etl-result-file-actions .etl-result-delete-button:hover:not(:disabled) { background: #fff5f3; }
+.etl-result-delete-confirmation { margin-top: 12px; padding: 12px; border: 1px solid #cda79f; }
+.etl-result-delete-confirmation h3 { margin: 0; font-size: 14px; }
+.etl-result-delete-confirmation p { margin: 8px 0 12px; font-size: 13px; line-height: 1.5; }
+.etl-result-delete-error { color: #9a231a; }

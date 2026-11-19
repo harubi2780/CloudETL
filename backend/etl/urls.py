@@ -10,4 +10,5 @@ urlpatterns = [
     path("runs/<uuid:run_id>/", views.run_detail, name="etl-run-detail"),
     path("runs/<uuid:run_id>/download/", views.download, name="etl-download"),
     path("runs/<uuid:run_id>/rows/", views.rows, name="etl-result-rows"),
+    path("runs/<uuid:run_id>/result/", views.result_file, name="etl-result-file"),
 ]
