@@ -8,7 +8,10 @@ import PipelinesPage from './PipelinesPage';
 jest.mock('../api/datasets', () => ({ __esModule: true, default: { list: jest.fn() } }));
 jest.mock('../api/etl', () => ({
   __esModule: true,
-  default: { capabilities: jest.fn(), dataset: jest.fn(), preview: jest.fn(), submit: jest.fn(), getRun: jest.fn() },
+  default: {
+    capabilities: jest.fn(), dataset: jest.fn(), preview: jest.fn(), submit: jest.fn(), getRun: jest.fn(),
+    listPipelines: jest.fn(), getPipeline: jest.fn(), createPipeline: jest.fn(), updatePipeline: jest.fn(), deletePipeline: jest.fn(),
+  },
 }));
 jest.mock('../navigation', () => ({ ...jest.requireActual('../navigation'), navigate: jest.fn() }));
 
@@ -29,7 +32,7 @@ const preview = {
 };
 const capabilities = () => ({
   operations: Object.fromEntries(operations.map(({ type }) => [type, {}])),
-  inputFormats: ['csv', 'tsv'], outputFormats: ['parquet', 'csv', 'tsv', 'json', 'xlsx'],
+  inputFormats: ['csv', 'tsv'], outputFormats: ['csv', 'tsv'],
   limits: { maxSources: 6, maxSteps: 50, maxRules: 50, maxCombinedInputBytes: 26214400 },
 });
 const library = (datasets = [orders, customers, third, storageOnly], extra = {}) => ({
@@ -38,7 +41,7 @@ const library = (datasets = [orders, customers, third, storageOnly], extra = {})
 const sourceSearch = `?datasets=${sourceId}`;
 
 function addOperation(type) {
-  const group = ['select_columns', 'cast_type'].includes(type) ? 'Columns'
+  const group = ['select_columns', 'merge_columns', 'cast_type'].includes(type) ? 'Columns'
     : type === 'filter_rows' ? 'Filter' : ['join', 'concat'].includes(type) ? 'Combine' : 'Clean';
   fireEvent.click(screen.getByRole('button', { name: group, exact: true }));
   fireEvent.click(screen.getByRole('button', { name: `Add ${operations.find((operation) => operation.type === type).label} step` }));
@@ -61,6 +64,7 @@ async function ready(search = sourceSearch) {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  window.sessionStorage.clear();
   etlApi.capabilities.mockResolvedValue(capabilities());
   datasetsApi.list.mockResolvedValue(library());
   etlApi.dataset.mockImplementation(async (id) => ({ dataset: [orders, customers, third, storageOnly].find((item) => item.id === id) }));
@@ -68,6 +72,10 @@ beforeEach(() => {
     ? { columns: [{ name: 'order_id', type: 'str' }, { name: 'customer_tier', type: 'str' }], rows: [{ order_id: 'ORD1', customer_tier: 'VIP' }], final_rows: 1 }
     : preview }));
   etlApi.submit.mockResolvedValue({ run: { id: runId, status: 'queued' } });
+  etlApi.listPipelines.mockResolvedValue({ pipelines: [], page: 1, total_pages: 1, total_count: 0 });
+  etlApi.createPipeline.mockResolvedValue({ pipeline: { id: '30000000-0000-0000-0000-000000000001', name: 'Data cleaning pipeline', configuration: {} } });
+  etlApi.updatePipeline.mockResolvedValue({ pipeline: { id: '30000000-0000-0000-0000-000000000001', name: 'Data cleaning pipeline', configuration: {} } });
+  etlApi.deletePipeline.mockResolvedValue({ deleted: true });
 });
 
 test('a selected numeric cell pre-fills a repeatable replacement without changing source rows', async () => {
@@ -93,7 +101,8 @@ test('extracts actual URL source metadata and shows ten original rows without si
   expect(within(table).getByRole('columnheader', { name: /amount/ })).toHaveTextContent('float64');
   fireEvent.click(screen.getByText('Preview details'));
   expect(screen.getByText(/Data shown above is the original source/)).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
+  expect(screen.getByText('Add at least one enabled transformation step before running the pipeline.')).toBeVisible();
 });
 
 test('loads the source selector and permits CSV/TSV while keeping other uploaded formats unavailable', async () => {
@@ -109,7 +118,7 @@ test('loads the source selector and permits CSV/TSV while keeping other uploaded
   expect(await screen.findByRole('cell', { name: 'ORD1' })).toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Source library' })).not.toBeInTheDocument();
   expect(screen.getByText('Starting dataset')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
   openLibrary();
   expect(screen.getByRole('button', { name: 'Add source orders.csv' })).toHaveTextContent('Selected');
 });
@@ -152,6 +161,9 @@ test('source preview failure blocks submission and retries extraction', async ()
   expect(screen.getByRole('button', { name: 'Add Clean text step' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
   expect(await screen.findByRole('cell', { name: 'ORD10' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add Clean text step' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
+  addOperation('string_transform');
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
   expect(etlApi.preview).toHaveBeenCalledTimes(2);
 });
@@ -202,11 +214,14 @@ test('configures, reorders, disables and removes steps while submitting their ac
   expect(within(screen.getByRole('complementary', { name: 'Pipeline settings' })).queryByRole('button', { name: /Replace values/ })).not.toBeInTheDocument();
   selectStep(1, 'Clean text');
   expect(screen.getByLabelText('Enable step 1')).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
+  fireEvent.click(screen.getByLabelText('Enable step 1'));
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
   await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
   expect(etlApi.submit).toHaveBeenCalledWith({
     schemaVersion: 1, name: 'Data cleaning pipeline', datasetId: sourceId,
-    steps: [{ type: 'string_transform', enabled: false, config: { rules: [{ column: 'city', trim: true, caseMode: 'lower' }] } }],
+    steps: [{ type: 'string_transform', enabled: true, config: { rules: [{ column: 'city', trim: true, caseMode: 'lower' }] } }],
   });
 });
 
@@ -239,10 +254,15 @@ test('selected files remain blocked until used by an enabled join or append step
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
   fireEvent.click(screen.getByLabelText('Enable step 1'));
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('tab', { name: 'customers.tsv' }));
+  const customerTab = screen.getByRole('tab', { name: /customers\.tsv/ });
+  expect(customerTab).toHaveTextContent('Unused');
+  fireEvent.click(customerTab);
   fireEvent.click(screen.getByRole('button', { name: 'Remove source customers.tsv' }));
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Remove step 1' }));
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
+  expect(screen.getByText('Add at least one enabled transformation step before running the pipeline.')).toBeVisible();
+  addOperation('string_transform');
   expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
   expect(etlApi.submit).not.toHaveBeenCalled();
 });
@@ -351,7 +371,7 @@ test('multiple selected columns prefill type conversion and column-selection ste
   fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
   await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
   expect(etlApi.submit.mock.calls[0][0].steps).toEqual([
-    { type: 'cast_type', enabled: true, config: { conversions: [{ column: 'city', toType: 'string' }, { column: 'amount', toType: 'string' }] } },
+    { type: 'cast_type', enabled: true, config: { conversions: [{ column: 'city', toType: 'str' }, { column: 'amount', toType: 'str' }] } },
     { type: 'select_columns', enabled: true, config: { selectedColumns: ['city', 'amount'] } },
   ]);
 });
@@ -379,9 +399,9 @@ test('without a header selection steps use valid starting schema defaults', asyn
 
 test('source sheet keyboard navigation and starting-source selection update the submitted pipeline', async () => {
   await ready(`?datasets=${sourceId},${customerId},${thirdId}`);
-  const orderTab = screen.getByRole('tab', { name: /orders.csv/ });
-  const customerTab = screen.getByRole('tab', { name: 'customers.tsv' });
-  const extraTab = screen.getByRole('tab', { name: 'extra.csv' });
+  const orderTab = screen.getByRole('tab', { name: /orders\.csv/ });
+  const customerTab = screen.getByRole('tab', { name: /customers\.tsv/ });
+  const extraTab = screen.getByRole('tab', { name: /extra\.csv/ });
   fireEvent.keyDown(orderTab, { key: 'ArrowRight' });
   expect(customerTab).toHaveFocus();
   expect(customerTab).toHaveAttribute('aria-selected', 'true');
@@ -414,4 +434,203 @@ test('Escape closes the source library and restores focus to its trigger', async
   expect(screen.queryByRole('region', { name: 'Source library' })).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
   expect(trigger).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('multi-select source picker adds multiple files and secondary tab supports pre-cleaning and quick combine', async () => {
+  render(<PipelinesPage />);
+  await screen.findByRole('button', { name: 'Sources (0)' });
+  openLibrary();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select source orders.csv' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select source customers.tsv' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add selected (2)' }));
+  await screen.findByRole('cell', { name: 'ORD1' });
+  const customerTab = screen.getByRole('tab', { name: /customers\.tsv/ });
+  expect(customerTab).toHaveTextContent('Unused');
+  fireEvent.click(customerTab);
+  await screen.findByRole('cell', { name: 'VIP' });
+  addOperation('string_transform');
+  fireEvent.click(screen.getByRole('button', { name: 'Join into start' }));
+  expect(customerTab).toHaveTextContent('Used');
+  fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
+  await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
+  expect(etlApi.submit.mock.calls[0][0].steps).toEqual([
+    { type: 'string_transform', enabled: true, sourceId: customerId, config: { rules: [{ column: 'order_id', trim: true, caseMode: 'none' }] } },
+    { type: 'join', enabled: true, config: { datasetId: customerId, on: 'order_id', how: 'left' } },
+  ]);
+});
+
+test('saves, updates, lists, opens, and deletes saved pipelines', async () => {
+  const savedId = '30000000-0000-0000-0000-000000000001';
+  etlApi.createPipeline.mockResolvedValueOnce({ pipeline: { id: savedId, name: 'Saved orders', configuration: { schemaVersion: 1, name: 'Saved orders', datasetId: sourceId, steps: [] } } });
+  etlApi.updatePipeline.mockResolvedValueOnce({ pipeline: { id: savedId, name: 'Saved orders v2', configuration: { schemaVersion: 1, name: 'Saved orders v2', datasetId: sourceId, steps: [] } } });
+  etlApi.listPipelines.mockResolvedValue({ pipelines: [{ id: savedId, name: 'Saved orders v2', source_count: 1, step_count: 0 }], page: 1, total_pages: 1, total_count: 1 });
+  await ready();
+  fireEvent.change(screen.getByLabelText('Pipeline name'), { target: { value: 'Saved orders' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save pipeline' }));
+  await screen.findByText('Saved "Saved orders".');
+  expect(etlApi.createPipeline).toHaveBeenCalledWith({ schemaVersion: 1, name: 'Saved orders', datasetId: sourceId, steps: [] });
+  fireEvent.change(screen.getByLabelText('Pipeline name'), { target: { value: 'Saved orders v2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+  await screen.findByText('Saved "Saved orders v2".');
+  expect(etlApi.updatePipeline).toHaveBeenCalledWith(savedId, { schemaVersion: 1, name: 'Saved orders v2', datasetId: sourceId, steps: [] });
+  fireEvent.click(screen.getByRole('button', { name: 'Saved', exact: true }));
+  expect(await screen.findByText('Saved orders v2')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  expect(navigate).toHaveBeenCalledWith(`/dashboard/pipelines?pipeline=${savedId}`);
+  fireEvent.click(screen.getByRole('button', { name: 'Saved', exact: true }));
+  await screen.findByText('Saved orders v2');
+  fireEvent.click(screen.getByRole('button', { name: 'Delete saved pipeline Saved orders v2' }));
+  await waitFor(() => expect(etlApi.deletePipeline).toHaveBeenCalledWith(savedId));
+});
+
+test('loads a saved pipeline via ?pipeline= query parameter', async () => {
+  const savedId = '30000000-0000-0000-0000-000000000009';
+  etlApi.getPipeline.mockResolvedValueOnce({
+    pipeline: {
+      id: savedId,
+      name: 'Loaded saved pipeline',
+      configuration: { schemaVersion: 1, name: 'Loaded saved pipeline', datasetId: sourceId, steps: [{ type: 'join', enabled: true, config: { datasetId: customerId, on: 'order_id', how: 'left' } }] },
+    },
+  });
+  await ready(`?pipeline=${savedId}`);
+  expect(etlApi.getPipeline).toHaveBeenCalledWith(savedId, { signal: expect.any(AbortSignal) });
+  expect(screen.getByLabelText('Pipeline name')).toHaveValue('Loaded saved pipeline');
+  expect(screen.getByRole('button', { name: 'Save as new' })).toBeInTheDocument();
+});
+
+test('preserves draft sources and steps across navigation, isolates per user, and clears on New draft or submit', async () => {
+  const userA = { id: 101, username: 'alice' };
+  const userB = { id: 202, username: 'bob' };
+  const view = render(<PipelinesPage search={sourceSearch} user={userA} />);
+  await screen.findByText(/First 10 of 12 rows · Original data/);
+  fireEvent.change(screen.getByLabelText('Pipeline name'), { target: { value: 'Preserved draft' } });
+  addOperation('string_transform');
+  addOperation('merge_columns');
+  view.unmount();
+
+  // Different user does not see userA's draft
+  const otherView = render(<PipelinesPage search="" user={userB} />);
+  await screen.findByRole('button', { name: 'Sources (0)' });
+  expect(screen.getByLabelText('Pipeline name')).toHaveValue('Data cleaning pipeline');
+  otherView.unmount();
+
+  // Returning as userA with empty search restores sources, name, and steps
+  const restored = render(<PipelinesPage search="" user={userA} />);
+  await screen.findByText(/First 10 of 12 rows · Original data/);
+  expect(screen.getByLabelText('Pipeline name')).toHaveValue('Preserved draft');
+  expect(screen.getByRole('button', { name: /^1\s*Clean text/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^2\s*Merge columns/ })).toBeInTheDocument();
+
+  // Submitting clears the draft
+  fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
+  await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
+  restored.unmount();
+
+  const afterSubmit = render(<PipelinesPage search="" user={userA} />);
+  await screen.findByRole('button', { name: 'Sources (0)' });
+  expect(screen.getByLabelText('Pipeline name')).toHaveValue('Data cleaning pipeline');
+
+  // New draft button also clears an active draft
+  afterSubmit.unmount();
+  const loadedAgain = render(<PipelinesPage search={sourceSearch} user={userA} />);
+  await screen.findByText(/First 10 of 12 rows · Original data/);
+  fireEvent.click(screen.getByRole('button', { name: 'New draft' }));
+  expect(screen.getByRole('button', { name: 'Sources (0)' })).toBeInTheDocument();
+  loadedAgain.unmount();
+  render(<PipelinesPage search="" user={userA} />);
+  await screen.findByRole('button', { name: 'Sources (0)' });
+});
+
+test('side-by-side split view renders multiple datasets simultaneously and scopes steps to the clicked pane', async () => {
+  await ready(`?datasets=${sourceId},${customerId},${thirdId}`);
+  const splitButton = screen.getByRole('button', { name: 'Compare side-by-side' });
+  fireEvent.click(splitButton);
+  expect(splitButton).toHaveAttribute('aria-pressed', 'true');
+  const comparison = screen.getByLabelText('Side-by-side source comparison');
+  expect(within(comparison).getByRole('heading', { name: 'Source preview: orders.csv' })).toBeInTheDocument();
+  expect(within(comparison).getByRole('heading', { name: 'Source preview: customers.tsv' })).toBeInTheDocument();
+
+  // Switch right comparison dataset to extra.csv, then back to customers.tsv
+  fireEvent.change(screen.getByLabelText('Compare dataset'), { target: { value: thirdId } });
+  expect(within(comparison).getByRole('heading', { name: 'Source preview: extra.csv' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Compare dataset'), { target: { value: customerId } });
+  await within(comparison).findByRole('cell', { name: 'VIP' });
+
+  // Clicking a header in the right pane targets customers.tsv
+  fireEvent.click(within(comparison).getByRole('button', { name: 'Select column B: customer_tier' }));
+  addOperation('string_transform');
+  addOperation('join');
+  addOperation('concat');
+  const concatGroup = screen.getByRole('group', { name: 'Files to append' });
+  fireEvent.click(within(concatGroup).getByLabelText('customers.tsv'));
+  fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
+  await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
+  expect(etlApi.submit.mock.calls[0][0].steps).toEqual([
+    { type: 'string_transform', enabled: true, sourceId: customerId, config: { rules: [{ column: 'customer_tier', trim: true, caseMode: 'none' }] } },
+    { type: 'join', enabled: true, config: { datasetId: customerId, on: 'order_id', how: 'left' } },
+    { type: 'concat', enabled: true, config: { datasetIds: [thirdId] } },
+  ]);
+});
+
+test('all eleven ETL operations can be added and configured in the pipeline workspace', async () => {
+  etlApi.preview.mockImplementation(async (id) => ({
+    preview: id === customerId
+      ? { columns: [{ name: 'order_id', type: 'str' }, { name: 'customer_tier', type: 'str' }], rows: [{ order_id: 'ORD1', customer_tier: 'VIP' }], final_rows: 1 }
+      : { ...preview, columns: [...columns, { name: 'order_date', type: 'datetime' }] },
+  }));
+  await ready(`?datasets=${sourceId},${customerId}`);
+  for (const { type } of operations) {
+    addOperation(type);
+  }
+  const inspector = screen.getByRole('complementary', { name: 'Pipeline settings' });
+  expect(within(inspector).getAllByRole('button', { name: /^\d+\s/ })).toHaveLength(11);
+  expect(screen.getByRole('group', { name: 'Files to append' })).toBeInTheDocument();
+  selectStep(2, 'Merge columns');
+  expect(screen.getByLabelText('New column name')).toHaveValue('merged_column');
+  selectStep(10, 'Join tables');
+  expect(screen.getByLabelText('Shared join column')).toHaveValue('order_id');
+  selectStep(7, 'Filter rows');
+  expect(screen.getByLabelText('Rule 1 comparison')).toBeInTheDocument();
+});
+
+test('R2–R4 in builder: conditional date formatting, cast_type restrictions, and type-aware filtering', async () => {
+  etlApi.preview.mockImplementation(async (id) => ({
+    preview: id === customerId
+      ? { columns: [{ name: 'order_id', type: 'str' }, { name: 'joined_at', type: 'datetime' }], rows: [{ order_id: 'ORD1', joined_at: '2026-01-01' }], final_rows: 1 }
+      : preview,
+  }));
+  await ready(`?datasets=${sourceId},${customerId}`);
+  expect(screen.queryByRole('button', { name: 'Add Format dates step' })).not.toBeInTheDocument();
+
+  // Switching to secondary tab with a date column reveals Format dates
+  fireEvent.click(screen.getByRole('tab', { name: /customers\.tsv/ }));
+  expect(screen.getByRole('button', { name: 'Add Format dates step' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: /orders\.csv/ }));
+  expect(screen.queryByRole('button', { name: 'Add Format dates step' })).not.toBeInTheDocument();
+
+  // Casting a column to date reveals Format dates; casting it back to str hides it
+  addOperation('cast_type');
+  const targetType = screen.getByLabelText('Rule 1 target type');
+  expect(within(targetType).getAllByRole('option').map((opt) => opt.value)).toEqual(['str', 'int', 'float', 'date']);
+  expect(within(targetType).queryByRole('option', { name: /boolean/i })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Rule 1 column'), { target: { value: 'city' } });
+  fireEvent.change(targetType, { target: { value: 'date' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Clean', exact: true }));
+  expect(screen.getByRole('button', { name: 'Add Format dates step' })).toBeInTheDocument();
+
+  // Filtering adapts operators when switching between string and numeric columns
+  addOperation('filter_rows');
+  const opSelect = () => screen.getByLabelText('Rule 1 comparison');
+  expect(within(opSelect()).getAllByRole('option').map((opt) => opt.value)).toEqual(['equals', 'contains', 'starts_with', 'ends_with']);
+  fireEvent.change(screen.getByLabelText('Rule 1 column'), { target: { value: 'amount' } });
+  expect(within(opSelect()).getAllByRole('option').map((opt) => opt.value)).toEqual([
+    'equals', 'not_equals', 'greater_than', 'less_than', 'greater_or_equal', 'less_or_equal',
+  ]);
+  expect(within(opSelect()).queryByRole('option', { name: 'Contains text' })).not.toBeInTheDocument();
+
+  // Switching cast_type back to str hides Format dates again
+  selectStep(1, 'Convert data type');
+  fireEvent.change(screen.getByLabelText('Rule 1 target type'), { target: { value: 'str' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Clean', exact: true }));
+  expect(screen.queryByRole('button', { name: 'Add Format dates step' })).not.toBeInTheDocument();
 });

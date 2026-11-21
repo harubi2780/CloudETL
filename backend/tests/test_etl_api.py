@@ -8,7 +8,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-import openpyxl
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
@@ -17,9 +16,16 @@ from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from datasets.models import Dataset
-from etl.models import ETLRun
+from etl.models import ETLRun, SavedPipeline
 from services import etl_service
 from services.dataset_service import upload_dataset
+
+
+DEFAULT_STEP = {
+    "type": "string_transform",
+    "enabled": True,
+    "config": {"rules": [{"column": "city", "trim": True, "caseMode": "none"}]},
+}
 
 
 class ETLSetupMixin:
@@ -48,7 +54,11 @@ class ETLSetupMixin:
         return Dataset.objects.get(pk=data["id"])
 
     def payload(self, steps=None):
-        return {"name": "Sample cleaning", "datasetId": str(self.dataset.pk), "steps": steps or []}
+        return {
+            "name": "Sample cleaning",
+            "datasetId": str(self.dataset.pk),
+            "steps": [DEFAULT_STEP] if steps is None else steps,
+        }
 
     def post(self, payload):
         return self.client.post("/api/etl/runs/", data=json.dumps(payload), content_type="application/json",
@@ -68,11 +78,30 @@ class ETLApiTests(ETLSetupMixin, TestCase):
     def test_capabilities_and_preview(self):
         response = self.client.get("/api/etl/capabilities/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()["operations"]), 10)
+        self.assertEqual(response.json()["outputFormats"], ["csv", "tsv"])
+        self.assertEqual(len(response.json()["operations"]), 11)
+        self.assertIn("merge_columns", response.json()["operations"])
+        self.assertEqual(
+            response.json()["operations"]["cast_type"]["conversions"][0]["toType"],
+            ["str", "int", "float", "date"],
+        )
+        self.assertEqual(
+            response.json()["operations"]["filter_rows"]["operatorsByType"],
+            {
+                "integer": ["equals", "not_equals", "greater_than", "less_than", "greater_or_equal", "less_or_equal"],
+                "float": ["equals", "not_equals", "greater_than", "less_than", "greater_or_equal", "less_or_equal"],
+                "string": ["equals", "contains", "starts_with", "ends_with"],
+                "datetime": ["after", "before", "equals"],
+                "boolean": ["is_true", "is_false"],
+            },
+        )
         self.assertIn("no-store", response["Cache-Control"])
         response = self.client.get(f"/api/etl/datasets/{self.dataset.pk}/preview/")
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(response.json()["preview"]["final_rows"], 5)
+        preview = response.json()["preview"]
+        self.assertEqual(preview["final_rows"], 5)
+        self.assertTrue(all(col["type"] in ("string", "integer", "float", "datetime", "boolean") for col in preview["columns"]))
+        self.assertEqual({col["name"]: col["type"] for col in preview["columns"]}["order_date"], "datetime")
         self.assertNotIn(self.dataset.file.name, response.content.decode())
         self.assertNotIn(b"NaN", response.content)
 
@@ -101,24 +130,18 @@ class ETLApiTests(ETLSetupMixin, TestCase):
         self.assertTrue(run.result.name.startswith(f"etl/{self.user.pk}/{run.pk}/"))
         self.assertEqual(self.dataset.sha256, hashlib.sha256(self.dataset.file.read()).hexdigest())
         url = f"/api/etl/runs/{run.pk}/download/"
-        for extension in ("parquet", "csv", "tsv", "json", "xlsx"):
+        for extension in ("csv", "tsv"):
             with self.subTest(extension=extension):
                 response = self.client.get(url, {"format": extension})
                 self.assertEqual(response.status_code, 200, response.content[:200])
                 self.assertIn("attachment", response["Content-Disposition"])
                 self.assertIn("no-store", response["Cache-Control"])
-                if extension == "parquet":
-                    self.assertTrue(response.content.startswith(b"PAR1"))
-                elif extension == "json":
-                    self.assertEqual(len(response.json()), 4)
-                elif extension == "xlsx":
-                    workbook = openpyxl.load_workbook(io.BytesIO(response.content), read_only=True)
-                    self.assertEqual(len(list(workbook.active.rows)), 5)
-                    workbook.close()
-                else:
-                    expected = (Path(__file__).resolve().parents[1] / "vendor" / "etl_tool" / "ket_qua_lam_sach.csv").read_text(encoding="utf-8-sig")
-                    actual = response.content.decode("utf-8").replace("\r\n", "\n")
-                    self.assertEqual(actual, expected if extension == "csv" else expected.replace(",", "\t"))
+                expected = (Path(__file__).resolve().parents[1] / "vendor" / "etl_tool" / "ket_qua_lam_sach.csv").read_text(encoding="utf-8-sig")
+                actual = response.content.decode("utf-8").replace("\r\n", "\n")
+                self.assertEqual(actual, expected if extension == "csv" else expected.replace(",", "\t"))
+        for unsupported in ("parquet", "json", "xlsx"):
+            with self.subTest(unsupported=unsupported):
+                self.assertEqual(self.client.get(url, {"format": unsupported}).status_code, 400)
 
     def test_session_csrf_and_http_methods(self):
         anonymous = Client()
@@ -171,16 +194,100 @@ class ETLApiTests(ETLSetupMixin, TestCase):
         self.assertEqual(run.error_code, "input_changed")
 
     def test_invalid_requests_and_unsupported_options(self):
-        for payload in ([], {"name": "x"}, {**self.payload(), "path": "/etc/passwd"},
-                        self.payload([{"type": "cast_type", "config": {"conversions": [{"column": "is_paid", "toType": "boolean"}]}}])):
+        for payload in (
+            [],
+            {"name": "x"},
+            {**self.payload(), "path": "/etc/passwd"},
+            self.payload([{"type": "cast_type", "config": {"conversions": [{"column": "is_paid", "toType": "binary"}]}}]),
+            self.payload([{"type": "cast_type", "config": {"conversions": [{"column": "is_paid", "toType": "boolean"}]}}]),
+            self.payload([{"type": "cast_type", "config": {"conversions": [{"column": "is_paid", "toType": "bool"}]}}]),
+            self.payload([]),
+            self.payload([{**DEFAULT_STEP, "enabled": False}]),
+        ):
             with self.subTest(payload=payload):
                 self.assertEqual(self.post(payload).status_code, 400)
         response = self.client.post("/api/etl/runs/", data='{"name":', content_type="application/json", HTTP_X_CSRFTOKEN=self.csrf)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(ETLRun.objects.count(), 0)
 
-    def test_non_tabular_supported_upload_is_rejected_by_etl(self):
-        dataset = self.upload("input.json", b'[{"id":1}]')
+    def test_empty_and_disabled_steps_rules_and_cast_and_filter_enforcement(self):
+        # R1: Runs reject empty, missing, or all-disabled steps with fields.steps
+        for bad_payload in (
+            self.payload([]),
+            {"name": "No steps key", "datasetId": str(self.dataset.pk)},
+            self.payload([{**DEFAULT_STEP, "enabled": False}]),
+        ):
+            response = self.post(bad_payload)
+            self.assertEqual(response.status_code, 400)
+            error = response.json()["error"]
+            self.assertEqual(error["code"], "invalid_pipeline")
+            self.assertEqual(
+                error["fields"]["steps"],
+                ["Add at least one enabled transformation step before running the pipeline."],
+            )
+        self.assertEqual(ETLRun.objects.count(), 0)
+
+        # R1: SavedPipeline drafts allow 0 steps and all-disabled steps
+        draft_payload = self.payload([])
+        created_draft = self.client.post(
+            "/api/etl/pipelines/", data=json.dumps(draft_payload), content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf, HTTP_ORIGIN="http://testserver",
+        )
+        self.assertEqual(created_draft.status_code, 201, created_draft.content)
+        pipeline_id = created_draft.json()["pipeline"]["id"]
+        updated_draft = self.client.put(
+            f"/api/etl/pipelines/{pipeline_id}/",
+            data=json.dumps(self.payload([{**DEFAULT_STEP, "enabled": False}])),
+            content_type="application/json", HTTP_X_CSRFTOKEN=self.csrf, HTTP_ORIGIN="http://testserver",
+        )
+        self.assertEqual(updated_draft.status_code, 200, updated_draft.content)
+
+        # R3: Saved pipelines also reject boolean/bool cast_type
+        for forbidden in ("boolean", "bool"):
+            bad_cast = self.client.post(
+                "/api/etl/pipelines/",
+                data=json.dumps(self.payload([{"type": "cast_type", "config": {"conversions": [{"column": "is_paid", "toType": forbidden}]}}])),
+                content_type="application/json", HTTP_X_CSRFTOKEN=self.csrf, HTTP_ORIGIN="http://testserver",
+            )
+            self.assertEqual(bad_cast.status_code, 400)
+
+        # R1: Mixed disabled + enabled steps run succeeds
+        mixed_response = self.post(self.payload([{**DEFAULT_STEP, "enabled": False}, DEFAULT_STEP]))
+        self.assertEqual(mixed_response.status_code, 202)
+        run = etl_service.claim_next_run()
+        etl_service.execute_run(run.pk, run.claim_token)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "succeeded")
+
+        # R1: execute_run fails if DB row has 0 enabled steps
+        stale_run = ETLRun.objects.create(
+            owner=self.user,
+            name="Stale empty run",
+            configuration=self.payload([]),
+            sources={str(self.dataset.pk): {
+                "sha256": self.dataset.sha256, "key": self.dataset.file.name,
+                "format": self.dataset.format, "size_bytes": self.dataset.size_bytes,
+            }},
+        )
+        claimed = etl_service.claim_next_run()
+        self.assertEqual(claimed.pk, stale_run.pk)
+        etl_service.execute_run(claimed.pk, claimed.claim_token)
+        stale_run.refresh_from_db()
+        self.assertEqual(stale_run.status, "failed")
+        self.assertEqual(stale_run.error_code, "invalid_pipeline")
+
+        # R4: Cross-type filter_rows fails run with invalid_column_type
+        bad_filter_run = self.process(self.payload([
+            {"type": "filter_rows", "config": {"conditions": [{"column": "total_amount", "operator": "contains", "value": "100"}]}},
+        ]))
+        self.assertEqual(bad_filter_run.status, "failed")
+        self.assertEqual(bad_filter_run.error_code, "invalid_column_type")
+
+    def test_non_tabular_legacy_dataset_is_rejected_by_etl(self):
+        dataset = Dataset.objects.create(
+            owner=self.user, filename="legacy.json", format="json",
+            file=f"datasets/{self.user.pk}/legacy.json", size_bytes=10, sha256="a" * 64,
+        )
         payload = self.payload()
         payload["datasetId"] = str(dataset.pk)
         self.assertEqual(self.post(payload).json()["error"]["code"], "unsupported_input")
@@ -251,6 +358,92 @@ class ETLApiTests(ETLSetupMixin, TestCase):
         self.assertEqual(run.status, "failed")
         self.assertFalse(list(Path(self.media_root).glob("etl/**/*.parquet")))
         self.assertTrue(self.dataset.file.storage.exists(self.dataset.file.name))
+
+    def test_saved_pipeline_crud_ownership_and_limit(self):
+        customers = self.upload("customers_sample.tsv")
+        initial_payload = {
+            "schemaVersion": 1,
+            "name": "Orders & Customers",
+            "datasetId": str(self.dataset.pk),
+            "steps": [
+                {"type": "string_transform", "sourceId": str(customers.pk), "config": {"rules": [{"column": "customer_tier", "trim": True, "caseMode": "lower"}]}},
+                {"type": "join", "config": {"datasetId": str(customers.pk), "on": "order_id", "how": "left"}},
+            ],
+        }
+        # Anonymous and missing-CSRF checks
+        anonymous = Client()
+        self.assertEqual(anonymous.get("/api/etl/pipelines/").status_code, 401)
+        self.assertEqual(self.client.post("/api/etl/pipelines/", data=json.dumps(initial_payload), content_type="application/json").status_code, 403)
+
+        created = self.client.post(
+            "/api/etl/pipelines/", data=json.dumps(initial_payload), content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf, HTTP_ORIGIN="http://testserver",
+        )
+        self.assertEqual(created.status_code, 201, created.content)
+        pipeline = created.json()["pipeline"]
+        pipeline_id = pipeline["id"]
+        self.assertEqual(pipeline["name"], "Orders & Customers")
+        self.assertEqual(pipeline["step_count"], 2)
+        self.assertEqual(pipeline["source_count"], 2)
+        self.assertEqual(pipeline["configuration"]["steps"][0]["sourceId"], str(customers.pk))
+
+        listed = self.client.get("/api/etl/pipelines/")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([item["id"] for item in listed.json()["pipelines"]], [pipeline_id])
+
+        fetched = self.client.get(f"/api/etl/pipelines/{pipeline_id}/")
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(fetched.json()["pipeline"]["configuration"], pipeline["configuration"])
+
+        updated_payload = {**initial_payload, "name": "Orders & Customers v2"}
+        updated = self.client.put(
+            f"/api/etl/pipelines/{pipeline_id}/", data=json.dumps(updated_payload), content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf, HTTP_ORIGIN="http://testserver",
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["pipeline"]["name"], "Orders & Customers v2")
+
+        # Cross-owner isolation
+        other_client = Client(enforce_csrf_checks=True)
+        other_client.force_login(self.other)
+        other_csrf = other_client.get("/api/auth/csrf/").json()["csrfToken"]
+        self.assertEqual(other_client.get("/api/etl/pipelines/").json()["pipelines"], [])
+        self.assertEqual(other_client.get(f"/api/etl/pipelines/{pipeline_id}/").status_code, 404)
+        self.assertEqual(other_client.put(
+            f"/api/etl/pipelines/{pipeline_id}/", data=json.dumps(updated_payload), content_type="application/json",
+            HTTP_X_CSRFTOKEN=other_csrf, HTTP_ORIGIN="http://testserver",
+        ).status_code, 404)
+        self.assertEqual(other_client.delete(
+            f"/api/etl/pipelines/{pipeline_id}/", HTTP_X_CSRFTOKEN=other_csrf, HTTP_ORIGIN="http://testserver",
+        ).status_code, 404)
+        self.assertEqual(other_client.post(
+            "/api/etl/pipelines/", data=json.dumps(initial_payload), content_type="application/json",
+            HTTP_X_CSRFTOKEN=other_csrf, HTTP_ORIGIN="http://testserver",
+        ).status_code, 404)
+
+        # Execute saved pipeline configuration end-to-end
+        run = self.process(fetched.json()["pipeline"]["configuration"])
+        self.assertEqual(run.status, "succeeded", run.error_message)
+        self.assertEqual(run.summary["rows"][0]["customer_tier"], "vip")
+
+        deleted = self.client.delete(
+            f"/api/etl/pipelines/{pipeline_id}/", HTTP_X_CSRFTOKEN=self.csrf, HTTP_ORIGIN="http://testserver",
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json(), {"deleted": True})
+        self.assertEqual(self.client.get(f"/api/etl/pipelines/{pipeline_id}/").status_code, 404)
+
+        # Per-owner limit enforcement
+        SavedPipeline.objects.bulk_create([
+            SavedPipeline(owner=self.user, name=f"P{index}", configuration=pipeline["configuration"])
+            for index in range(etl_service.MAX_SAVED_PIPELINES)
+        ])
+        capped = self.client.post(
+            "/api/etl/pipelines/", data=json.dumps(initial_payload), content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf, HTTP_ORIGIN="http://testserver",
+        )
+        self.assertEqual(capped.status_code, 429)
+        self.assertEqual(capped.json()["error"]["code"], "pipeline_limit")
 
 
 class ETLWorkerProcessTests(ETLSetupMixin, TransactionTestCase):

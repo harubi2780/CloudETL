@@ -41,3 +41,18 @@ class ETLRun(models.Model):
         constraints = [
             models.CheckConstraint(condition=models.Q(status__in=["queued", "running", "succeeded", "failed"]), name="etl_status_valid"),
         ]
+
+
+class SavedPipeline(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="saved_pipelines")
+    name = models.CharField(max_length=120)
+    configuration = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["owner", "-updated_at"], name="etl_pipeline_owner_recent_idx"),
+        ]

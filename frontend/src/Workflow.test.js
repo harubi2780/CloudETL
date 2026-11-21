@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { operations } from './lib/pipeline/workflow';
@@ -41,8 +41,16 @@ test('follows the real app/API adapters from source selection through join, run,
     if (url === `/api/etl/runs/${runId}/`) return response({ run: {
       id: runId, name: submitted.name, status: 'succeeded', configuration: submitted,
       created_at: '2026-11-15T00:00:00Z', finished_at: '2026-11-15T00:00:02Z',
-      summary: { final_rows: 26, columns }, error: null,
+      summary: { initial_rows: 26, final_rows: 26, dropped_rows: 0, added_rows: 0, columns }, error: null,
+      sources_meta: {
+        [ordersId]: { id: ordersId, filename: 'orders.csv', format: 'csv', size_bytes: 200, available: true, matches_snapshot: true, is_primary: true },
+        [customersId]: { id: customersId, filename: 'customers.tsv', format: 'tsv', size_bytes: 100, available: true, matches_snapshot: true, is_primary: false },
+      },
     } });
+    if (url.includes(`/api/etl/runs/${runId}/source-rows/`)) {
+      return response({ dataset_id: ordersId, filename: 'orders.csv', page: 1, page_size: 25, total_pages: 1, total_count: 1, columns,
+        rows: [{ order_id: 'RAW1' }], matches_snapshot: true });
+    }
     if (url.includes(`/api/etl/runs/${runId}/rows/`)) {
       const page = Number(new URL(url, window.location.origin).searchParams.get('page'));
       const start = (page - 1) * 25;
@@ -66,9 +74,12 @@ test('follows the real app/API adapters from source selection through join, run,
     expect(window.location.pathname).toBe(`/dashboard/runs/${runId}`);
     expect(submitted.steps).toEqual([{ type: 'join', enabled: true, config: { datasetId: customersId, on: 'order_id', how: 'left' } }]);
     expect(global.fetch.mock.calls.find(([url, options]) => url === '/api/etl/runs/' && options.method === 'POST')[1].headers['X-CSRFToken']).toBe('workflow-csrf');
-    await userEvent.click(screen.getByRole('link', { name: 'View result' }));
+    expect(screen.getByRole('heading', { name: 'Pipeline steps' })).toBeInTheDocument();
+    expect(screen.getByText(/Left join with customers\.tsv on "order_id"/)).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: 'RAW1' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: 'ORD25' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    const resultNav = screen.getByRole('navigation', { name: 'Result row pages' });
+    await userEvent.click(within(resultNav).getByRole('button', { name: 'Next' }));
     expect(await screen.findByRole('cell', { name: 'ORD26' })).toBeInTheDocument();
     expect(screen.queryByRole('cell', { name: 'ORD1' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('File format'), { target: { value: 'csv' } });

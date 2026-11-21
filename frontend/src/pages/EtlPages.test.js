@@ -7,11 +7,20 @@ import ResultsDetailPage from './ResultsDetailPage';
 
 jest.mock('../api/etl', () => ({
   __esModule: true,
-  default: { listRuns: jest.fn(), getRun: jest.fn(), rows: jest.fn(), capabilities: jest.fn(), download: jest.fn(), deleteResult: jest.fn() },
+  default: {
+    listRuns: jest.fn(),
+    getRun: jest.fn(),
+    rows: jest.fn(),
+    runSourceRows: jest.fn(),
+    capabilities: jest.fn(),
+    download: jest.fn(),
+    deleteResult: jest.fn(),
+  },
 }));
 
 const runId = '10000000-0000-0000-0000-000000000001';
 const secondId = '10000000-0000-0000-0000-000000000002';
+const thirdId = '10000000-0000-0000-0000-000000000003';
 const run = {
   id: runId, name: 'Customer cleanup', status: 'succeeded',
   created_at: '2026-11-15T10:00:00Z', started_at: '2026-11-15T10:00:02Z', finished_at: '2026-11-15T10:00:05Z',
@@ -24,13 +33,21 @@ const rowPage = (extra = {}) => ({
   columns: [{ name: 'name', type: 'string' }, { name: 'amount', type: 'integer' }, { name: 'paid', type: 'boolean' }, { name: 'missing', type: 'string' }, { name: 'empty', type: 'string' }],
   page: 1, page_size: 25, total_pages: 1, total_count: 1, ...extra,
 });
+const sourceRowPage = (extra = {}) => ({
+  dataset_id: secondId,
+  filename: 'orders.csv',
+  rows: [{ name: 'Raw Alice', amount: 10 }],
+  columns: [{ name: 'name', type: 'str' }, { name: 'amount', type: 'int' }],
+  page: 1, page_size: 25, total_pages: 1, total_count: 1, matches_snapshot: true, ...extra,
+});
 
 beforeEach(() => {
   jest.resetAllMocks();
   etlApi.listRuns.mockResolvedValue(listing());
   etlApi.getRun.mockResolvedValue({ run });
   etlApi.rows.mockResolvedValue(rowPage());
-  etlApi.capabilities.mockResolvedValue({ outputFormats: ['parquet', 'csv', 'tsv', 'json', 'xlsx'] });
+  etlApi.runSourceRows.mockResolvedValue(sourceRowPage());
+  etlApi.capabilities.mockResolvedValue({ outputFormats: ['csv', 'tsv'] });
   etlApi.download.mockResolvedValue(undefined);
   etlApi.deleteResult.mockResolvedValue({ deleted: true });
 });
@@ -124,8 +141,11 @@ test('polls queued and running runs and stops polling after success', async () =
   expect(screen.queryByTestId('status-spinner')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Submitted configuration')).not.toHaveAttribute('open');
   expect(screen.getByText('3s')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'View result' })).toHaveAttribute('href', `/dashboard/results/${runId}`);
+  expect(screen.queryByRole('link', { name: 'View result' })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Edit and resubmit' })).toHaveAttribute('href', `/dashboard/pipelines?run=${runId}`);
+  expect(screen.getByRole('heading', { name: 'Pipeline steps' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Original vs. Result comparison' })).toBeInTheDocument();
+  expect(await screen.findByRole('cell', { name: 'Alice' })).toBeInTheDocument();
   await act(async () => { jest.advanceTimersByTime(10000); });
   expect(etlApi.getRun).toHaveBeenCalledTimes(3);
   unmount();
@@ -209,31 +229,34 @@ test('loads server-paginated result rows and distinguishes null, empty, zero and
   expect(screen.getByLabelText('Null value')).toHaveTextContent('NULL');
   expect(screen.getByLabelText('Empty string')).toHaveTextContent('Empty string');
   expect(etlApi.rows).toHaveBeenCalledWith(runId, { page: 1, pageSize: 25, signal: expect.any(AbortSignal) });
-  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  const resultNav = screen.getByRole('navigation', { name: 'Result row pages' });
+  fireEvent.click(within(resultNav).getByRole('button', { name: 'Next' }));
   expect(await screen.findByRole('cell', { name: 'Bob' })).toBeInTheDocument();
   expect(screen.getByText('Rows 26–26 of 26. 5 columns.')).toBeInTheDocument();
   expect(etlApi.rows).toHaveBeenLastCalledWith(runId, { page: 2, pageSize: 25, signal: expect.any(AbortSignal) });
-  fireEvent.change(screen.getByLabelText('Rows per page'), { target: { value: '50' } });
+  fireEvent.change(screen.getByLabelText('Result rows per page'), { target: { value: '50' } });
   expect(await screen.findByRole('cell', { name: 'Alice' })).toBeInTheDocument();
   expect(etlApi.rows).toHaveBeenLastCalledWith(runId, { page: 1, pageSize: 50, signal: expect.any(AbortSignal) });
 });
 
 test('downloads the complete file using advertised formats and prevents duplicate clicks', async () => {
   let finish;
-  etlApi.capabilities.mockResolvedValue({ outputFormats: ['parquet', 'csv'] });
+  etlApi.capabilities.mockResolvedValue({ outputFormats: ['csv', 'tsv'] });
   etlApi.download.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
   render(<ResultsDetailPage runId={runId} />);
   await screen.findByRole('cell', { name: 'Alice' });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Download full result' })).toBeEnabled());
   const formats = screen.getByLabelText('File format');
+  expect(formats).toHaveValue('csv');
   expect(within(formats).getAllByRole('option')).toHaveLength(2);
+  expect(within(formats).queryByRole('option', { name: 'PARQUET' })).not.toBeInTheDocument();
   expect(within(formats).queryByRole('option', { name: 'XLSX' })).not.toBeInTheDocument();
-  fireEvent.change(formats, { target: { value: 'csv' } });
+  fireEvent.change(formats, { target: { value: 'tsv' } });
   const download = screen.getByRole('button', { name: 'Download full result' });
   fireEvent.click(download);
   fireEvent.click(download);
   expect(etlApi.download).toHaveBeenCalledTimes(1);
-  expect(etlApi.download).toHaveBeenCalledWith(runId, 'csv');
+  expect(etlApi.download).toHaveBeenCalledWith(runId, 'tsv');
   expect(screen.getByRole('button', { name: 'Preparing download…' })).toBeDisabled();
   expect(screen.getByText('All rows, all pages.')).toBeInTheDocument();
   await act(async () => { finish(); });
@@ -288,7 +311,7 @@ test('an empty successful result still offers full-file download and an honest e
   render(<ResultsDetailPage runId={runId} />);
   expect(await screen.findByText('No rows in this result.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Download full result' })).toBeEnabled();
-  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  expect(within(screen.getByRole('navigation', { name: 'Result row pages' })).getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 
 test('result changes abort old row requests and ignore a previous download completion', async () => {
@@ -347,8 +370,9 @@ test('confirmed deletion prevents duplicate requests and removes only the result
   expect(screen.queryByRole('button', { name: 'Download full result' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Delete result file' })).not.toBeInTheDocument();
   expect(screen.queryByRole('cell', { name: 'Alice' })).not.toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Run details' })).toHaveAttribute('href', `/dashboard/runs/${runId}`);
+  expect(screen.queryByRole('link', { name: 'Run details' })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Edit and resubmit' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Pipeline steps' })).toBeInTheDocument();
   expect(screen.getByText('Output rows')).toBeInTheDocument();
   expect(rowSignal.aborted).toBe(true);
 });
@@ -387,20 +411,24 @@ test('removed result metadata skips row and format requests but preserves summar
   expect(etlApi.capabilities).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: 'Download full result' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Delete result file' })).not.toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Run details' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Run details' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Edit and resubmit' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Pipeline steps' })).toBeInTheDocument();
   expect(screen.getByText('Output rows')).toBeInTheDocument();
 });
 
-test('removed outputs have no view-result links in run or result history', async () => {
+test('removed outputs have unified run/result link and file-removed note in history', async () => {
   etlApi.listRuns.mockResolvedValue(listing([{ ...run, result_available: false }]));
   const { unmount } = render(<RunsPage />);
   await screen.findByRole('rowheader', { name: 'Customer cleanup' });
   expect(screen.getByText('File removed')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View run & result' })).toHaveAttribute('href', `/dashboard/runs/${runId}`);
   expect(screen.queryByRole('link', { name: 'View result' })).not.toBeInTheDocument();
   unmount();
   render(<ResultsPage />);
   await screen.findByRole('rowheader', { name: 'Customer cleanup' });
   expect(screen.getByRole('link', { name: 'Customer cleanup' })).toHaveAttribute('href', `/dashboard/runs/${runId}`);
+  expect(screen.getByRole('link', { name: 'View run & result' })).toHaveAttribute('href', `/dashboard/runs/${runId}`);
   expect(screen.queryByRole('link', { name: 'View result' })).not.toBeInTheDocument();
 });
 
@@ -412,6 +440,7 @@ test('run detail preserves configuration and summary when its output is removed'
   expect(screen.getByLabelText('Submitted configuration')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Run summary' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Edit and resubmit' })).toBeInTheDocument();
+  expect(etlApi.runSourceRows).not.toHaveBeenCalled();
 });
 
 test('an old deletion completion cannot remove a newly opened result', async () => {
@@ -428,4 +457,131 @@ test('an old deletion completion cannot remove a newly opened result', async () 
   await act(async () => { finish({ deleted: true }); });
   expect(screen.queryByRole('heading', { name: 'Result file removed' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Delete result file' })).toBeEnabled();
+});
+
+test('unified RunDetailPage and ResultsDetailPage display ordered pipeline steps, disabled badge, delta summary, and normalized column diff', async () => {
+  const richRun = {
+    ...run,
+    sources_meta: {
+      [secondId]: { id: secondId, filename: 'orders.csv', format: 'csv', size_bytes: 200, available: true, matches_snapshot: true, is_primary: true },
+      [thirdId]: { id: thirdId, filename: 'customers.tsv', format: 'tsv', size_bytes: 100, available: true, matches_snapshot: true, is_primary: false },
+    },
+    configuration: {
+      datasetId: secondId,
+      steps: [
+        { type: 'cast_type', enabled: true, config: { conversions: [{ column: 'amount', toType: 'float' }] } },
+        { type: 'string_transform', enabled: false, sourceId: thirdId, config: { rules: [{ column: 'tier', trim: true, caseMode: 'upper' }] } },
+        { type: 'join', enabled: true, config: { datasetId: thirdId, on: 'name', how: 'inner' } },
+      ],
+    },
+  };
+  etlApi.getRun.mockResolvedValue({ run: richRun });
+  etlApi.rows.mockResolvedValue(rowPage({
+    columns: [{ name: 'name', type: 'string' }, { name: 'amount', type: 'float' }, { name: 'tier', type: 'string' }],
+    rows: [{ name: 'Alice', amount: 12.5, tier: 'VIP' }],
+  }));
+  etlApi.runSourceRows.mockResolvedValue(sourceRowPage({
+    columns: [{ name: 'name', type: 'str' }, { name: 'amount', type: 'int' }, { name: 'legacy_col', type: 'string' }],
+    rows: [{ name: 'Raw Alice', amount: 12, legacy_col: 'x' }],
+  }));
+
+  const { unmount } = render(<ResultsDetailPage runId={runId} />);
+  expect(await screen.findByText('3 steps')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: '← All results' })).toHaveAttribute('href', '/dashboard/results');
+  const stepsList = screen.getByRole('heading', { name: 'Pipeline steps' }).closest('section');
+  expect(within(stepsList).getByText('Convert amount → float')).toBeInTheDocument();
+  expect(within(stepsList).getByText('Disabled')).toBeInTheDocument();
+  expect(within(stepsList).getByText('customers.tsv')).toBeInTheDocument();
+  expect(within(stepsList).getByText('Inner join with customers.tsv on "name"')).toBeInTheDocument();
+  expect(await screen.findByRole('cell', { name: 'Raw Alice' })).toBeInTheDocument();
+  expect(screen.getByRole('cell', { name: 'Alice' })).toBeInTheDocument();
+  const diffRegion = screen.getByLabelText('Column changes');
+  expect(diffRegion).toHaveTextContent('Added columns: tier');
+  expect(diffRegion).toHaveTextContent('Removed columns: legacy_col');
+  expect(diffRegion).toHaveTextContent('Type changes: amount (integer → float)');
+  expect(diffRegion).not.toHaveTextContent('name (');
+  unmount();
+
+  render(<RunDetailPage runId={runId} />);
+  expect(await screen.findByRole('link', { name: '← All runs' })).toHaveAttribute('href', '/dashboard/runs');
+  expect(await screen.findByRole('cell', { name: 'Raw Alice' })).toBeInTheDocument();
+});
+
+test('supports original pagination, view mode toggling, and multi-source switching with abort cleanup', async () => {
+  const multiRun = {
+    ...run,
+    sources_meta: {
+      [secondId]: { id: secondId, filename: 'orders.csv', format: 'csv', size_bytes: 200, available: true, matches_snapshot: true, is_primary: true },
+      [thirdId]: { id: thirdId, filename: 'customers.tsv', format: 'tsv', size_bytes: 100, available: true, matches_snapshot: true, is_primary: false },
+    },
+    configuration: { datasetId: secondId, steps: [{ type: 'join', enabled: true, config: { datasetId: thirdId, on: 'id', how: 'left' } }] },
+  };
+  etlApi.getRun.mockResolvedValue({ run: multiRun });
+  etlApi.runSourceRows
+    .mockResolvedValueOnce(sourceRowPage({ total_pages: 2, total_count: 26 }))
+    .mockResolvedValueOnce(sourceRowPage({ page: 2, total_pages: 2, total_count: 26, rows: [{ name: 'Raw Page 2', amount: 20 }] }))
+    .mockResolvedValueOnce(sourceRowPage({ dataset_id: thirdId, filename: 'customers.tsv', rows: [{ name: 'Customer Row', amount: 30 }] }));
+
+  render(<RunDetailPage runId={runId} />);
+  expect(await screen.findByRole('cell', { name: 'Raw Alice' })).toBeInTheDocument();
+  expect(etlApi.runSourceRows).toHaveBeenCalledWith(runId, { page: 1, pageSize: 25, datasetId: secondId, signal: expect.any(AbortSignal) });
+
+  const originalNav = screen.getByRole('navigation', { name: 'Original row pages' });
+  fireEvent.click(within(originalNav).getByRole('button', { name: 'Next' }));
+  expect(await screen.findByRole('cell', { name: 'Raw Page 2' })).toBeInTheDocument();
+  expect(etlApi.runSourceRows).toHaveBeenLastCalledWith(runId, { page: 2, pageSize: 25, datasetId: secondId, signal: expect.any(AbortSignal) });
+
+  fireEvent.change(screen.getByLabelText('Original source dataset'), { target: { value: thirdId } });
+  expect(await screen.findByRole('cell', { name: 'Customer Row' })).toBeInTheDocument();
+  expect(etlApi.runSourceRows).toHaveBeenLastCalledWith(runId, { page: 1, pageSize: 25, datasetId: thirdId, signal: expect.any(AbortSignal) });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Result only' }));
+  expect(screen.queryByRole('heading', { name: /Original data/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Result rows' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Original only' }));
+  expect(screen.getByRole('heading', { name: /Original data/ })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Result rows' })).not.toBeInTheDocument();
+});
+
+test('degrades gracefully when original source is deleted, modified, or errors', async () => {
+  // Deleted via sources_meta.available === false
+  etlApi.getRun.mockResolvedValueOnce({
+    run: {
+      ...run,
+      sources_meta: {
+        [secondId]: { id: secondId, filename: 'orders.csv', format: 'csv', size_bytes: 200, available: false, matches_snapshot: false, is_primary: true },
+      },
+    },
+  });
+  const { unmount } = render(<RunDetailPage runId={runId} />);
+  expect(await screen.findByText(/Original source unavailable/)).toBeInTheDocument();
+  expect(await screen.findByRole('cell', { name: 'Alice' })).toBeInTheDocument();
+  expect(etlApi.runSourceRows).not.toHaveBeenCalled();
+  unmount();
+
+  // Modified via sources_meta.matches_snapshot === false
+  etlApi.getRun.mockResolvedValueOnce({
+    run: {
+      ...run,
+      sources_meta: {
+        [secondId]: { id: secondId, filename: 'orders.csv', format: 'csv', size_bytes: 200, available: true, matches_snapshot: false, is_primary: true },
+      },
+    },
+  });
+  const { unmount: unmountModified } = render(<RunDetailPage runId={runId} />);
+  expect(await screen.findByText(/Original source changed after this run/)).toBeInTheDocument();
+  expect(etlApi.runSourceRows).not.toHaveBeenCalled();
+  unmountModified();
+
+  // Transient error + retry + 409 fallback
+  etlApi.getRun.mockResolvedValue({ run });
+  etlApi.runSourceRows
+    .mockRejectedValueOnce({ status: 500, message: 'Original rows temporary error.' })
+    .mockResolvedValueOnce(sourceRowPage());
+  render(<RunDetailPage runId={runId} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Original rows temporary error.');
+  expect(await screen.findByRole('cell', { name: 'Alice' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry original rows' }));
+  expect(await screen.findByRole('cell', { name: 'Raw Alice' })).toBeInTheDocument();
 });

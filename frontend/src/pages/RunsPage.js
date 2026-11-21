@@ -54,7 +54,7 @@ export function RunHistoryList({ onSessionExpired, resultsOnly = false }) {
           <tbody>{state.data.runs.map((run) => <tr key={run.id}>
             <th scope="row"><Link to={`/dashboard/${resultsOnly && run.result_available !== false ? 'results' : 'runs'}/${run.id}`}>{run.name}</Link></th>
             <td><RunStatus status={run.status} /></td><td>{runDate(run.created_at)}</td><td>{runDate(run.finished_at)}</td>
-            <td><div className="etl-actions"><Link to={`/dashboard/runs/${run.id}`}>Run details</Link>{run.status === 'succeeded' && (run.result_available === false ? <span className="etl-note">File removed</span> : <Link to={`/dashboard/results/${run.id}`}>View result</Link>)}</div></td>
+            <td><div className="etl-actions"><Link to={`/dashboard/${resultsOnly && run.result_available !== false ? 'results' : 'runs'}/${run.id}`}>View run &amp; result</Link>{run.status === 'succeeded' && run.result_available === false && <span className="etl-note">File removed</span>}</div></td>
           </tr>)}</tbody>
         </table></div>
         <Pagination page={state.data.page} totalPages={state.data.total_pages} totalCount={state.data.total_count} onPageChange={setPage} label={resultsOnly ? 'Result pages' : 'Run pages'} />

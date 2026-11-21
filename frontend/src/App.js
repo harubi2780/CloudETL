@@ -86,7 +86,7 @@ function App() {
       {pathname === '/dashboard' ? <DashboardPage user={session.user} />
         : pathname === '/dashboard/datasets' ? <DatasetsPage onSessionExpired={session.expire} />
         : pathname === '/dashboard/account' ? <AccountPage onSessionExpired={session.expire} />
-        : pathname === '/dashboard/pipelines' ? <PipelinesPage key={location.search} search={location.search} onSessionExpired={session.expire} />
+        : pathname === '/dashboard/pipelines' ? <PipelinesPage key={location.search} search={location.search} user={session.user} onSessionExpired={session.expire} />
         : page.path === '/dashboard/runs' ? page.runId ? <RunDetailPage key={page.runId} runId={page.runId} onSessionExpired={session.expire} /> : <RunsPage onSessionExpired={session.expire} />
         : page.runId ? <ResultsDetailPage key={page.runId} runId={page.runId} onSessionExpired={session.expire} /> : <ResultsPage onSessionExpired={session.expire} />}
     </DashboardLayout>

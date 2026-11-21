@@ -13,10 +13,11 @@ from django.utils import timezone
 
 from accounts.models import StorageReservation
 from datasets.errors import DatasetError
+from datasets.models import Dataset
 from etl import adapter
 from etl.errors import ETLError
-from etl.models import ETLRun
-from etl.serializers import MAX_MEMORY_BYTES, MAX_RESULT_BYTES, PipelineSerializer, source_ids
+from etl.models import ETLRun, SavedPipeline
+from etl.serializers import FORMATS, MAX_MEMORY_BYTES, MAX_RESULT_BYTES, PipelineSerializer, source_ids
 from services.dataset_service import public_dataset, require_dataset
 from services.storage_service import (
     abandon_reservation, cleanup_reservation, ensure_target_idle_locked,
@@ -70,8 +71,11 @@ def public_run(run):
     }
 
 
-def submit_run(user, payload):
-    serializer = PipelineSerializer(payload)
+MAX_SAVED_PIPELINES = 100
+
+
+def _validate_pipeline_for_owner(user, payload, *, require_steps=False):
+    serializer = PipelineSerializer(payload, require_steps=require_steps)
     serializer.is_valid(raise_exception=True)
     config = serializer.validated_data
     snapshots = {}
@@ -85,6 +89,80 @@ def submit_run(user, payload):
                                  "format": dataset.format, "size_bytes": dataset.size_bytes}
     if total_size > settings.DATASET_MAX_FILE_SIZE_BYTES:
         raise ETLError("Combined ETL input size exceeds the upload size limit.", code="resource_limit")
+    return config, snapshots
+
+
+def owned_pipeline(user, pipeline_id):
+    try:
+        return SavedPipeline.objects.get(owner=user, pk=pipeline_id)
+    except SavedPipeline.DoesNotExist as error:
+        raise ETLError("Saved pipeline not found.", code="pipeline_not_found", status=404) from error
+
+
+def public_pipeline(pipeline, *, include_config=False):
+    config = pipeline.configuration or {}
+    data = {
+        "id": str(pipeline.pk),
+        "name": pipeline.name,
+        "dataset_id": config.get("datasetId"),
+        "step_count": len(config.get("steps", [])),
+        "source_count": len(source_ids(config)) if config.get("datasetId") else 0,
+        "created_at": pipeline.created_at.isoformat(),
+        "updated_at": pipeline.updated_at.isoformat(),
+    }
+    if include_config:
+        data["configuration"] = config
+    return data
+
+
+def list_pipelines(user, page):
+    paginator = Paginator(SavedPipeline.objects.filter(owner=user), 20)
+    try:
+        result = paginator.page(page)
+    except EmptyPage as error:
+        raise ETLError("This pipeline page does not exist.", code="invalid_page") from error
+    return {
+        "pipelines": [public_pipeline(pipeline) for pipeline in result],
+        "page": result.number,
+        "total_pages": paginator.num_pages,
+        "total_count": paginator.count,
+    }
+
+
+def create_pipeline(user, payload):
+    config, _ = _validate_pipeline_for_owner(user, payload, require_steps=False)
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+        if SavedPipeline.objects.filter(owner=user).count() >= MAX_SAVED_PIPELINES:
+            raise ETLError(f"You can save at most {MAX_SAVED_PIPELINES} pipelines.", code="pipeline_limit", status=429)
+        pipeline = SavedPipeline.objects.create(owner=user, name=config["name"], configuration=config)
+    return public_pipeline(pipeline, include_config=True)
+
+
+def update_pipeline(user, pipeline_id, payload):
+    config, _ = _validate_pipeline_for_owner(user, payload, require_steps=False)
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+        try:
+            pipeline = SavedPipeline.objects.select_for_update().get(owner=user, pk=pipeline_id)
+        except SavedPipeline.DoesNotExist as error:
+            raise ETLError("Saved pipeline not found.", code="pipeline_not_found", status=404) from error
+        pipeline.name = config["name"]
+        pipeline.configuration = config
+        pipeline.save(update_fields=["name", "configuration", "updated_at"])
+    return public_pipeline(pipeline, include_config=True)
+
+
+def delete_pipeline(user, pipeline_id):
+    with transaction.atomic():
+        deleted, _ = SavedPipeline.objects.filter(owner=user, pk=pipeline_id).delete()
+    if not deleted:
+        raise ETLError("Saved pipeline not found.", code="pipeline_not_found", status=404)
+    return {"deleted": True}
+
+
+def submit_run(user, payload):
+    config, snapshots = _validate_pipeline_for_owner(user, payload, require_steps=True)
     # Serialize queue admission per owner so concurrent requests cannot exceed the cap.
     with transaction.atomic():
         get_user_model().objects.select_for_update().get(pk=user.pk)
@@ -104,6 +182,70 @@ def dataset_preview(user, dataset_id):
     except Exception as error:
         logger.exception("Dataset ETL preview failed")
         raise ETLError("We could not preview this dataset.", code="preview_failed", status=503) from error
+
+
+def dataset_rows(user, dataset_id, page, page_size):
+    dataset = require_dataset(user, dataset_id)
+    try:
+        return adapter.paginate_frame(adapter.extract_dataset(dataset), page, page_size)
+    except (ETLError, DatasetError):
+        raise
+    except Exception as error:
+        logger.exception("Dataset row pagination failed")
+        raise ETLError("We could not read these dataset rows.", code="dataset_unavailable", status=503) from error
+
+
+def run_sources_meta(run):
+    snapshots = run.sources or {}
+    if not snapshots:
+        return {}
+    datasets = {
+        str(dataset.pk): dataset
+        for dataset in Dataset.objects.filter(owner=run.owner, pk__in=list(snapshots.keys()))
+    }
+    primary_id = (run.configuration or {}).get("datasetId")
+    meta = {}
+    for dataset_id, snapshot in snapshots.items():
+        dataset = datasets.get(dataset_id)
+        meta[dataset_id] = {
+            "id": dataset_id,
+            "filename": dataset.filename if dataset is not None else None,
+            "format": dataset.format if dataset is not None else snapshot.get("format"),
+            "size_bytes": dataset.size_bytes if dataset is not None else snapshot.get("size_bytes"),
+            "available": dataset is not None,
+            "matches_snapshot": dataset is not None and dataset.sha256 == snapshot.get("sha256"),
+            "is_primary": dataset_id == primary_id,
+        }
+    return meta
+
+
+def source_rows(user, run_id, page, page_size, dataset_id=None):
+    run = owned_run(user, run_id)
+    target_id = dataset_id or (run.configuration or {}).get("datasetId")
+    snapshots = run.sources or {}
+    if not target_id or target_id not in snapshots:
+        raise ETLError("Source dataset not found for this run.", code="dataset_not_found", status=404)
+    dataset = require_dataset(user, target_id)
+    snapshot = snapshots[target_id]
+    if dataset.sha256 != snapshot.get("sha256"):
+        raise ETLError(
+            "The source dataset was modified after this run was created.",
+            code="source_modified",
+            status=409,
+        )
+    try:
+        paged = adapter.paginate_frame(adapter.extract_dataset(dataset), page, page_size)
+    except (ETLError, DatasetError):
+        raise
+    except Exception as error:
+        logger.exception("ETL source row pagination failed for run %s", run.pk)
+        raise ETLError("We could not read these source rows.", code="source_unavailable", status=503) from error
+    return {
+        "dataset_id": str(dataset.pk),
+        "filename": dataset.filename,
+        **paged,
+        "matches_snapshot": True,
+    }
 
 
 def claim_next_run():
@@ -141,7 +283,7 @@ def execute_run(run_id, claim_token):
     reservation = None
     try:
         # Validate persisted data too, including commands executed outside the API.
-        serializer = PipelineSerializer(run.configuration)
+        serializer = PipelineSerializer(run.configuration, require_steps=True)
         serializer.is_valid(raise_exception=True)
         config = serializer.validated_data
         frames = {}
@@ -234,9 +376,9 @@ def result_content(run):
 
 
 def download_result(user, run_id, file_format):
+    if file_format not in FORMATS:
+        raise ETLError("Unsupported export format.")
     content = result_content(owned_run(user, run_id))
-    if file_format == "parquet":
-        return content
     try:
         return adapter.serialize_result(adapter.read_result(content), file_format)
     except ETLError:

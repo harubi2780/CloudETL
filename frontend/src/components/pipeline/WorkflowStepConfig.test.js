@@ -28,6 +28,8 @@ test('join offers shared keys only, source preview, and supported retention choi
   await userEvent.selectOptions(key, 'order_id');
   await userEvent.selectOptions(screen.getByLabelText('Rows to retain'), 'inner');
   expect(configuration()).toEqual({ datasetId: 'customers', on: 'order_id', how: 'inner' });
+  expect(screen.getByText(/Shared keys: order_id/)).toBeInTheDocument();
+  expect(screen.getByText(/Added columns: phone/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Preview customers.tsv' }));
   expect(preview).toHaveBeenCalledWith('customers');
   expect(screen.getByText(/Multiple matches can increase/)).toBeInTheDocument();
@@ -46,18 +48,22 @@ test('append lists column differences and preserves selected file order without 
   expect(configuration()).toEqual({ datasetIds: ['customers', 'next'] });
   expect(screen.getByText('Current data: missing phone; these cells will be NULL.')).toBeInTheDocument();
   expect(screen.getByText('customers.tsv: missing amount, city; these cells will be NULL.')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Move next.csv up in append order' }));
+  expect(configuration()).toEqual({ datasetIds: ['next', 'customers'] });
   await userEvent.click(screen.getByLabelText('customers.tsv'));
   expect(configuration()).toEqual({ datasetIds: ['next'] });
 });
 
-test('numeric null fill preserves zero as a number and supports an empty text fill', async () => {
+test('numeric null fill preserves zero as a number and supports median and empty text fill', async () => {
   render(<Harness type="handle_null" config={{ rules: [{ column: 'amount', strategy: 'custom', customValue: '' }] }} />);
   fireEvent.change(screen.getByLabelText('Rule 1 fill value'), { target: { value: '0' } });
   expect(configuration().rules[0].customValue).toBe(0);
   await userEvent.selectOptions(screen.getByLabelText('Rule 1 column'), 'city');
   fireEvent.change(screen.getByLabelText('Rule 1 fill value'), { target: { value: '' } });
   expect(configuration().rules[0].customValue).toBe('');
-  expect(screen.queryByRole('option', { name: /median/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('option', { name: /median/i })).toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText('Rule 1 null handling'), 'median');
+  expect(configuration().rules[0].strategy).toBe('median');
 });
 
 test('replacement preserves empty strings and numeric zero', () => {
@@ -67,14 +73,53 @@ test('replacement preserves empty strings and numeric zero', () => {
   expect(configuration()).toEqual({ column: 'amount', oldValue: 0, newValue: '' });
 });
 
-test('numeric comparisons use numbers and literal text contains keeps text', async () => {
-  render(<Harness type="filter_rows" config={{ conditions: [{ column: 'amount', operator: 'greater_than', value: '' }] }} />);
+test('filter controls show only type-relevant operators and reset incompatible operators on column change', async () => {
+  const typedColumns = [
+    { name: 'amount', type: 'float64' },
+    { name: 'city', type: 'str' },
+    { name: 'paid', type: 'bool' },
+    { name: 'order_date', type: 'datetime' },
+  ];
+  render(<Harness type="filter_rows" columns={typedColumns}
+    config={{ conditions: [{ column: 'amount', operator: 'greater_than', value: '' }] }} />);
+  const opSelect = () => screen.getByLabelText('Rule 1 comparison');
+  expect(within(opSelect()).getAllByRole('option').map((item) => item.value)).toEqual([
+    'equals', 'not_equals', 'greater_than', 'less_than', 'greater_or_equal', 'less_or_equal',
+  ]);
+  expect(within(opSelect()).queryByRole('option', { name: 'Contains text' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Rule 1 comparison value'), { target: { value: '0' } });
   expect(configuration().conditions[0].value).toBe(0);
-  await userEvent.selectOptions(screen.getByLabelText('Rule 1 comparison'), 'contains');
+
+  await userEvent.selectOptions(screen.getByLabelText('Rule 1 column'), 'city');
+  expect(opSelect()).toHaveValue('equals');
+  expect(configuration().conditions[0]).toEqual({ column: 'city', operator: 'equals', value: '' });
+  expect(within(opSelect()).getAllByRole('option').map((item) => item.value)).toEqual([
+    'equals', 'contains', 'starts_with', 'ends_with',
+  ]);
+  await userEvent.selectOptions(opSelect(), 'contains');
   fireEvent.change(screen.getByLabelText('Rule 1 comparison value'), { target: { value: '[VIP]' } });
   expect(configuration().conditions[0].value).toBe('[VIP]');
-  expect(screen.queryByRole('option', { name: /is true/i })).not.toBeInTheDocument();
+
+  await userEvent.selectOptions(screen.getByLabelText('Rule 1 column'), 'paid');
+  expect(opSelect()).toHaveValue('is_true');
+  expect(within(opSelect()).getAllByRole('option').map((item) => item.value)).toEqual(['is_true', 'is_false']);
+  expect(configuration().conditions[0]).toEqual({ column: 'paid', operator: 'is_true', value: null });
+  expect(screen.queryByLabelText('Rule 1 comparison value')).not.toBeInTheDocument();
+
+  await userEvent.selectOptions(screen.getByLabelText('Rule 1 column'), 'order_date');
+  expect(opSelect()).toHaveValue('after');
+  expect(within(opSelect()).getAllByRole('option').map((item) => item.value)).toEqual(['after', 'before', 'equals']);
+  fireEvent.change(screen.getByLabelText('Rule 1 comparison value'), { target: { value: '2026-01-01' } });
+  expect(configuration().conditions[0]).toEqual({ column: 'order_date', operator: 'after', value: '2026-01-01' });
+
+  await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
+  expect(screen.getByLabelText('Rule 2 column')).toHaveValue('amount');
+  expect(screen.getByLabelText('Rule 2 comparison')).toHaveValue('equals');
+});
+
+test('filter controls warn when a referenced column is unavailable at the step', () => {
+  render(<Harness type="filter_rows" config={{ conditions: [{ column: 'removed_col', operator: 'equals', value: 'x' }] }} />);
+  expect(screen.getByText('Selected column is unavailable at this step.')).toBeInTheDocument();
 });
 
 test('rule controls add uniquely labelled fields and respect the advertised rule limit', async () => {
@@ -89,14 +134,22 @@ test('rule controls add uniquely labelled fields and respect the advertised rule
   expect(screen.getByRole('button', { name: 'Add rule' })).toBeEnabled();
 });
 
-test('type and string choices are filtered to backend capabilities', () => {
-  const { unmount } = render(<Harness type="cast_type" config={{ conversions: [{ column: 'amount', toType: 'float' }] }}
-    capabilities={{ operations: { cast_type: { conversions: [{ toType: ['float', 'string', 'boolean'] }] } } }} />);
-  const target = screen.getByLabelText('Rule 1 target type');
-  expect(within(target).getAllByRole('option').map((item) => item.value)).toEqual(['float', 'string']);
+test('type and string choices allow only str, int, float, date and never boolean', () => {
+  const { unmount } = render(<Harness type="cast_type" config={{ conversions: [{ column: 'amount', toType: 'float' }] }} />);
+  const defaultTarget = screen.getByLabelText('Rule 1 target type');
+  expect(within(defaultTarget).getAllByRole('option').map((item) => item.value)).toEqual(['str', 'int', 'float', 'date']);
+  expect(within(defaultTarget).queryByRole('option', { name: /boolean/i })).not.toBeInTheDocument();
   unmount();
+
+  const { unmount: unmountFiltered } = render(<Harness type="cast_type" config={{ conversions: [{ column: 'amount', toType: 'float' }] }}
+    capabilities={{ operations: { cast_type: { conversions: [{ toType: ['float', 'string', 'boolean', 'unknown_type'] }] } } }} />);
+  const target = screen.getByLabelText('Rule 1 target type');
+  expect(within(target).getAllByRole('option').map((item) => item.value)).toEqual(['str', 'float']);
+  expect(within(target).queryByRole('option', { name: /boolean/i })).not.toBeInTheDocument();
+  unmountFiltered();
+
   render(<Harness type="string_transform" config={{ rules: [{ column: 'city', trim: true, caseMode: 'none' }] }} />);
-  expect(within(screen.getByLabelText('Rule 1 letter case')).getAllByRole('option').map((item) => item.value)).toEqual(['none', 'upper', 'lower']);
+  expect(within(screen.getByLabelText('Rule 1 letter case')).getAllByRole('option').map((item) => item.value)).toEqual(['none', 'upper', 'lower', 'title']);
 });
 
 test('legacy string configuration becomes canonical rules after an edit', async () => {
@@ -105,25 +158,45 @@ test('legacy string configuration becomes canonical rules after an edit', async 
   expect(configuration()).toEqual({ rules: [{ column: 'city', trim: false, caseMode: 'lower' }] });
 });
 
-test('deduplication compares selected columns or all columns and only keeps first', async () => {
+test('deduplication compares selected columns or all columns and supports keep first or last', async () => {
   render(<Harness type="drop_duplicates" config={{ rules: [{ allColumns: true, columns: [], keep: 'first' }] }} />);
-  expect(screen.getByText('Keeps the first exact match.')).toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText('Rule 1 duplicate row to keep'), 'last');
+  expect(configuration().rules[0]).toEqual({ allColumns: true, columns: [], keep: 'last' });
   await userEvent.click(screen.getByLabelText('Rule 1: compare all columns'));
   await userEvent.click(screen.getByLabelText('amount'));
-  expect(configuration().rules[0]).toEqual({ allColumns: false, columns: ['order_id', 'amount'], keep: 'first' });
+  expect(configuration().rules[0]).toEqual({ allColumns: false, columns: ['order_id', 'amount'], keep: 'last' });
   await userEvent.click(screen.getByLabelText('Rule 1: compare all columns'));
-  expect(configuration().rules[0]).toEqual({ allColumns: true, columns: [], keep: 'first' });
+  expect(configuration().rules[0]).toEqual({ allColumns: true, columns: [], keep: 'last' });
 });
 
-test('column selection preserves output order and date format uses automatic parsing', async () => {
+test('column selection preserves output order and date format restricts picker to date columns', async () => {
   const { unmount } = render(<Harness type="select_columns" config={{ selectedColumns: [] }} />);
   await userEvent.click(screen.getByLabelText('city'));
   await userEvent.click(screen.getByLabelText('order_id'));
   expect(configuration().selectedColumns).toEqual(['city', 'order_id']);
   unmount();
-  render(<Harness type="format_datetime" config={{ column: 'city', inputFormat: 'auto', outputFormat: 'YYYY-MM-DD' }} />);
+
+  const { unmount: unmountDate } = render(<Harness type="format_datetime"
+    columns={[...columns, { name: 'order_date', type: 'datetime' }]}
+    config={{ column: 'order_date', inputFormat: 'auto', outputFormat: 'YYYY-MM-DD' }} />);
+  const dateSelect = screen.getByLabelText('Date column');
+  expect(within(dateSelect).getAllByRole('option').map((item) => item.value)).toEqual(['', 'order_date']);
+  expect(within(dateSelect).queryByRole('option', { name: 'city' })).not.toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText('Date input format'), 'DD/MM/YYYY');
   await userEvent.selectOptions(screen.getByLabelText('Date output format'), 'ISO_8601');
-  expect(configuration().inputFormat).toBe('auto');
+  expect(configuration().inputFormat).toBe('DD/MM/YYYY');
   expect(configuration().outputFormat).toBe('ISO_8601');
-  expect(screen.getByText(/Unrecognized dates become missing/)).toBeInTheDocument();
+  expect(screen.getByText(/Auto-detect parses mixed date formats/)).toBeInTheDocument();
+  unmountDate();
+
+  render(<Harness type="format_datetime" config={{ column: 'city', inputFormat: 'auto', outputFormat: 'YYYY-MM-DD' }} />);
+  expect(screen.getByText('No date columns are available at this step.')).toBeInTheDocument();
+});
+
+test('merge columns configures selected columns, new name, and separator', async () => {
+  render(<Harness type="merge_columns" config={{ columns: ['order_id'], newColumnName: 'label', separator: ' ' }} />);
+  await userEvent.click(screen.getByLabelText('city'));
+  fireEvent.change(screen.getByLabelText('New column name'), { target: { value: 'order_city' } });
+  fireEvent.change(screen.getByLabelText('Separator'), { target: { value: ' - ' } });
+  expect(configuration()).toEqual({ columns: ['order_id', 'city'], newColumnName: 'order_city', separator: ' - ' });
 });

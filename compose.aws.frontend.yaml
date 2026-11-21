@@ -1,0 +1,10 @@
+# Standalone Compose stack for EC2 #1 (Frontend Nginx + React SPA).
+services:
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-80}:8080"
+    environment:
+      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:?Set BACKEND_UPSTREAM to the private Backend EC2 URL, e.g. http://10.0.2.15:8000}

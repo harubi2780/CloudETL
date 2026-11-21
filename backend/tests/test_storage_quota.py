@@ -218,7 +218,7 @@ class ETLStorageQuotaTests(ETLSetupMixin, TestCase):
             self.assertEqual(run.status, "succeeded", run.error_message)
             self.assertEqual(storage_usage(self.user)["available_bytes"], 0)
             before = storage_usage(self.user)
-            for file_format in ("parquet", "csv", "tsv", "json", "xlsx"):
+            for file_format in ("csv", "tsv"):
                 response = self.client.get(f"/api/etl/runs/{run.pk}/download/", {"format": file_format})
                 self.assertEqual(response.status_code, 200)
             self.assertEqual(storage_usage(self.user), before)

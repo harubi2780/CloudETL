@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import authApi from '../api/auth';
+import { clearAllPipelineDrafts } from '../lib/pipeline/draftStorage';
 
 export default function useSession() {
   const [session, setSession] = useState({ status: 'loading', user: null, error: '' });
@@ -23,6 +24,7 @@ export default function useSession() {
   async function signOut() {
     // Clear the user only after the server confirms logout succeeded.
     await authApi.logout();
+    clearAllPipelineDrafts();
     setSession({ status: 'ready', user: null, error: '' });
   }
 

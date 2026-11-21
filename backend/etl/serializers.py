@@ -12,16 +12,34 @@ MAX_COLUMNS = 2048
 MAX_CELLS = 1_000_000
 MAX_MEMORY_BYTES = 128 * 1024 * 1024
 MAX_RESULT_BYTES = 25 * 1024 * 1024
-FORMATS = ("parquet", "csv", "tsv", "json", "xlsx")
+FORMATS = ("csv", "tsv")
+DATETIME_INPUT_FORMATS = ("auto", "YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY", "YYYY/MM/DD")
+DATETIME_OUTPUT_FORMATS = ("YYYY-MM-DD", "YYYY-MM-DD HH:mm:ss", "ISO_8601")
+FILTER_OPERATORS = (
+    "greater_than", "less_than", "greater_or_equal", "less_or_equal",
+    "equals", "not_equals", "contains", "starts_with", "ends_with",
+    "is_true", "is_false", "after", "before",
+)
+FILTER_OPERATORS_BY_TYPE = {
+    "integer": ["equals", "not_equals", "greater_than", "less_than", "greater_or_equal", "less_or_equal"],
+    "float": ["equals", "not_equals", "greater_than", "less_than", "greater_or_equal", "less_or_equal"],
+    "string": ["equals", "contains", "starts_with", "ends_with"],
+    "datetime": ["after", "before", "equals"],
+    "boolean": ["is_true", "is_false"],
+}
 OPERATIONS = {
     "select_columns": {"selectedColumns": "non-empty column list"},
-    "drop_duplicates": {"rules": [{"allColumns": "boolean", "columns": "column list", "keep": ["first"]}]},
-    "handle_null": {"rules": [{"column": "column", "strategy": ["drop", "mean", "custom"], "customValue": "scalar"}]},
-    "cast_type": {"conversions": [{"column": "column", "toType": ["integer", "float", "string"]}]},
-    "string_transform": {"rules": [{"column": "column", "trim": "boolean", "caseMode": ["none", "upper", "lower"]}]},
+    "drop_duplicates": {"rules": [{"allColumns": "boolean", "columns": "column list", "keep": ["first", "last"]}]},
+    "handle_null": {"rules": [{"column": "column", "strategy": ["drop", "mean", "median", "custom"], "customValue": "scalar"}]},
+    "cast_type": {"conversions": [{"column": "column", "toType": ["str", "int", "float", "date"]}]},
+    "string_transform": {"rules": [{"column": "column", "trim": "boolean", "caseMode": ["none", "upper", "lower", "title"]}]},
     "replace_value": {"column": "column", "oldValue": "scalar", "newValue": "scalar"},
-    "format_datetime": {"column": "column", "inputFormat": ["auto"], "outputFormat": ["YYYY-MM-DD", "YYYY-MM-DD HH:mm:ss", "ISO_8601"]},
-    "filter_rows": {"conditions": [{"column": "column", "operator": ["greater_than", "less_than", "greater_or_equal", "less_or_equal", "equals", "not_equals", "contains"], "value": "scalar (numeric for comparisons)"}]},
+    "format_datetime": {"column": "column", "inputFormat": list(DATETIME_INPUT_FORMATS), "outputFormat": list(DATETIME_OUTPUT_FORMATS)},
+    "filter_rows": {
+        "conditions": [{"column": "column", "operator": list(FILTER_OPERATORS), "value": "scalar (numeric for comparisons, string for text/date, omitted for boolean flags)"}],
+        "operatorsByType": FILTER_OPERATORS_BY_TYPE,
+    },
+    "merge_columns": {"columns": "column list (at least 2)", "newColumnName": "column", "separator": "string"},
     "join": {"datasetId": "dataset UUID", "on": "column", "how": ["left", "right", "inner", "outer"]},
     "concat": {"datasetIds": "dataset UUID list"},
 }
@@ -106,7 +124,7 @@ def scalar(value, path):
 
 
 def validate_config(kind, raw, path):
-    allowed = set(OPERATIONS[kind])
+    allowed = {"conditions"} if kind == "filter_rows" else set(OPERATIONS[kind])
     # The current frontend also sends these two legacy configuration shapes.
     if kind == "string_transform":
         allowed |= {"columns", "trim", "caseMode"}
@@ -126,8 +144,23 @@ def validate_config(kind, raw, path):
         return {"column": text(config["column"], path), "oldValue": scalar(config["oldValue"], path), "newValue": scalar(config["newValue"], path)}
     if kind == "format_datetime":
         return {"column": text(config.get("column"), path),
-                "inputFormat": choice(config.get("inputFormat", "auto"), ("auto",), path),
-                "outputFormat": choice(config.get("outputFormat", "YYYY-MM-DD"), ("YYYY-MM-DD", "YYYY-MM-DD HH:mm:ss", "ISO_8601"), path)}
+                "inputFormat": choice(config.get("inputFormat", "auto"), DATETIME_INPUT_FORMATS, path),
+                "outputFormat": choice(config.get("outputFormat", "YYYY-MM-DD"), DATETIME_OUTPUT_FORMATS, path)}
+    if kind == "merge_columns":
+        selected = columns(config.get("columns"), path)
+        if len(selected) < 2:
+            invalid(path, "Select at least 2 columns to merge.")
+        new_name = text(config.get("newColumnName"), path)
+        separator = config.get("separator", " ")
+        if not isinstance(separator, str) or len(separator) > 32:
+            invalid(path, "Separator must be a string up to 32 characters.")
+        try:
+            separator.encode("utf-8")
+        except UnicodeEncodeError:
+            invalid(path, "Enter valid Unicode text.")
+        if any(ord(char) < 32 or ord(char) == 127 for char in separator):
+            invalid(path, "Control characters are not allowed.")
+        return {"columns": selected, "newColumnName": new_name, "separator": separator}
     if kind == "string_transform" and "rules" not in config:
         config = {"rules": [{"column": col, "trim": config.get("trim", False), "caseMode": config.get("caseMode", "none")}
                             for col in columns(config.get("columns"), path)]}
@@ -143,41 +176,57 @@ def validate_config(kind, raw, path):
             selected = [] if all_columns else columns(rule.get("columns"), location)
             if all_columns and rule.get("columns") not in (None, []):
                 invalid(location, "All-columns rules must have an empty columns list.")
-            choice(rule.get("keep", "first"), ("first",), location)
+            keep = choice(rule.get("keep", "first"), ("first", "last"), location)
             if rule.get("orderBy", "") != "":
                 invalid(location, "Ordering duplicates is not supported by the tool.")
-            rules.append({"allColumns": all_columns, "columns": selected, "keep": "first"})
+            rules.append({"allColumns": all_columns, "columns": selected, "keep": keep})
             continue
         allowed_rule = {"column", "strategy", "customValue"} if kind == "handle_null" else {"column", "toType"} if kind == "cast_type" else {"column", "trim", "caseMode"} if kind == "string_transform" else {"column", "operator", "value"}
         rule = object_fields(item, allowed_rule, location)
         result = {"column": text(rule.get("column"), location)}
         if kind == "handle_null":
-            aliases = {"drop_row": "drop", "fill_mean": "mean", "fill_custom": "custom"}
+            aliases = {"drop_row": "drop", "fill_mean": "mean", "fill_median": "median", "fill_custom": "custom"}
             strategy = rule.get("strategy")
             if isinstance(strategy, str):
                 strategy = aliases.get(strategy, strategy)
-            result["strategy"] = choice(strategy, ("drop", "mean", "custom"), location)
+            result["strategy"] = choice(strategy, ("drop", "mean", "median", "custom"), location)
             if strategy == "custom" and ("customValue" not in rule or rule["customValue"] is None):
                 invalid(location, "Custom fill requires a non-null value.")
             result["customValue"] = scalar(rule.get("customValue"), location)
         elif kind == "cast_type":
-            result["toType"] = choice(rule.get("toType"), ("integer", "float", "string"), location)
+            aliases = {"string": "str", "integer": "int", "datetime": "date"}
+            to_type = rule.get("toType")
+            if isinstance(to_type, str):
+                to_type = aliases.get(to_type, to_type)
+            result["toType"] = choice(to_type, ("str", "int", "float", "date"), location)
         elif kind == "string_transform":
             result["trim"] = boolean(rule.get("trim", False), location)
-            result["caseMode"] = choice(rule.get("caseMode", "none"), ("none", "upper", "lower"), location)
+            result["caseMode"] = choice(rule.get("caseMode", "none"), ("none", "upper", "lower", "title"), location)
         else:
-            result["operator"] = choice(rule.get("operator"), ("greater_than", "less_than", "greater_or_equal", "less_or_equal", "equals", "not_equals", "contains"), location)
-            object_fields(rule, allowed_rule, location, ("value",))
-            result["value"] = scalar(rule["value"], location)
-            if result["operator"] == "contains":
-                if not isinstance(result["value"], str) or not result["value"]:
-                    invalid(location, "Contains requires a non-empty literal string.")
+            op = choice(rule.get("operator"), FILTER_OPERATORS, location)
+            result["operator"] = op
+            if op in ("is_true", "is_false"):
+                if "value" in rule and rule["value"] is not None:
+                    invalid(location, "Boolean flag filters do not accept a value.")
+                result["value"] = None
             else:
-                try:
-                    if isinstance(result["value"], bool) or not math.isfinite(float(result["value"])):
-                        raise ValueError
-                except (ValueError, TypeError, OverflowError):
-                    invalid(location, "This comparison requires a finite numeric value.")
+                object_fields(rule, allowed_rule, location, ("value",))
+                result["value"] = scalar(rule["value"], location)
+                if op in ("contains", "starts_with", "ends_with"):
+                    if not isinstance(result["value"], str) or not result["value"]:
+                        invalid(location, "Text filters require a non-empty string.")
+                elif op in ("after", "before"):
+                    if not isinstance(result["value"], str) or not result["value"].strip() or len(result["value"]) > 64:
+                        invalid(location, "Date filters require a non-empty date string.")
+                elif op == "equals":
+                    if result["value"] is None or isinstance(result["value"], bool) or result["value"] == "":
+                        invalid(location, "Equals requires a non-empty string or finite number.")
+                else:
+                    try:
+                        if isinstance(result["value"], bool) or not math.isfinite(float(result["value"])):
+                            raise ValueError
+                    except (ValueError, TypeError, OverflowError):
+                        invalid(location, "This comparison requires a finite numeric value.")
         rules.append(result)
     return {key: rules}
 
@@ -185,8 +234,9 @@ def validate_config(kind, raw, path):
 class PipelineSerializer:
     """Validate into a canonical configuration suitable for JSONField persistence."""
 
-    def __init__(self, data):
+    def __init__(self, data, *, require_steps=False):
         self.initial_data = data
+        self.require_steps = require_steps
         self.validated_data = None
 
     def is_valid(self, *, raise_exception=False):
@@ -196,16 +246,28 @@ class PipelineSerializer:
                 invalid("schemaVersion", "Only schema version 1 is supported.")
             if "updatedAt" in payload:
                 text(payload["updatedAt"], "updatedAt", 64)
+            if self.require_steps and payload.get("steps") is None:
+                invalid("steps", "Add at least one enabled transformation step before running the pipeline.")
             steps = []
             for index, raw in enumerate(array(payload.get("steps"), "steps", MAX_STEPS, nonempty=False)):
                 path = f"steps.{index}"
-                step = object_fields(raw, ("id", "name", "type", "config", "enabled"), path, ("type", "config"))
+                step = object_fields(raw, ("id", "name", "type", "config", "enabled", "sourceId"), path, ("type", "config"))
                 for metadata in ("id", "name"):
                     if metadata in step:
                         text(step[metadata], f"{path}.{metadata}", 120)
                 kind = choice(step["type"], tuple(OPERATIONS), f"{path}.type")
-                steps.append({"type": kind, "enabled": boolean(step.get("enabled", True), f"{path}.enabled"),
-                              "config": validate_config(kind, step["config"], f"{path}.config")})
+                canonical_step = {
+                    "type": kind,
+                    "enabled": boolean(step.get("enabled", True), f"{path}.enabled"),
+                    "config": validate_config(kind, step["config"], f"{path}.config"),
+                }
+                if step.get("sourceId") is not None:
+                    if kind in ("join", "concat"):
+                        invalid(f"{path}.sourceId", "Combine steps always run on the starting dataset.")
+                    canonical_step["sourceId"] = identifier(step["sourceId"], f"{path}.sourceId")
+                steps.append(canonical_step)
+            if self.require_steps and not any(step["enabled"] for step in steps):
+                invalid("steps", "Add at least one enabled transformation step before running the pipeline.")
             self.validated_data = {"schemaVersion": 1, "name": text(payload.get("name"), "name", 120),
                                    "datasetId": identifier(payload.get("datasetId"), "datasetId"), "steps": steps}
             if len(source_ids(self.validated_data)) > MAX_SOURCES:
@@ -220,6 +282,8 @@ class PipelineSerializer:
 def source_ids(config):
     ids = [config["datasetId"]]
     for step in config["steps"]:
+        if step["enabled"] and step.get("sourceId"):
+            ids.append(step["sourceId"])
         if step["enabled"] and step["type"] == "join":
             ids.append(step["config"]["datasetId"])
         if step["enabled"] and step["type"] == "concat":

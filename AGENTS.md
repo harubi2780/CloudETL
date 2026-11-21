@@ -1,109 +1,43 @@
-## 1. Project Context
+# AGENTS.md — ETL SaaS Platform
 
-- You are the lead developer. Use a planner–executor workflow.
-- we are making a ETL system that will be deploy on the cloud and be provide as a SaaS application, the technology we will be using is django for backend, react for frontend, postgres database and docker
+## Project
+University cloud-computing project: a multi-user ETL SaaS platform intended for AWS.
 
-### Technology Stack
-- Backend: Python and Django
-- Frontend: React
-- Database: PostgreSQL
-- Containerization: Docker and Docker Compose
-- Deployment target: AWS
+**Intended stack:** Python/Django, React, PostgreSQL, Docker Compose, AWS. Inspect the repository before assuming any component exists or changing the stack.
 
-Users should be able to upload datasets, configure transformation steps through the frontend, execute ETL pipelines, and access the processed results.
+**Product flow:** users upload datasets, configure transformations in React, submit declarative JSON, run ETL pipelines, and inspect/download/transfer results. Store file bytes (uploads and outputs) in object/file storage; store metadata, ownership, pipeline definitions, execution state, and storage references in PostgreSQL. Current export formats: CSV and TSV.
 
-The frontend should send transformation configurations to the backend as structured JSON.
+## Role and coordination
+Act as lead engineer and technical coordinator. When available and selected, use Antigravity Orchestrator for task understanding, exploration, planning, delegation, and final review. Executors handle bounded implementation and tests. Use subagents only for meaningful independent work (prefer 2–3); ask before using 4+. Define scope, context, file ownership, and acceptance criteria. Avoid overlapping edits. Review and integrate all delegated work. If orchestration is unavailable, work sequentially. Do not confuse Orchestrator with Swarm, Teamwork, or Dynamic Workflows.
 
-user uploaded file is store in an storage and database will store the metadata and reference to that file.
+The lead agent owns architecture, security-sensitive decisions, integration, and final verification.
 
-data after being transform and load will be store as parquet file, but can be convert to any following file format: xslx, csv, tsv, json for the user to view, download or transfer to their database.
+## Core principles
+- Inspect relevant repository structure, versions, dependencies, conventions, code, and tests before proposing changes.
+- Follow existing architecture; prefer the smallest maintainable solution. Avoid speculative abstractions, premature microservices, unnecessary dependencies, and overengineering.
+- Keep UI, API, business logic, ETL execution, storage, and persistence responsibilities separate.
+- Treat uploads, pipeline JSON, and user-supplied connection details as untrusted. Validate on the server; frontend validation is usability only.
+- Keep secrets in environment variables or a suitable secret manager. Never commit real `.env` files, credentials, tokens, or private connection strings.
+- Document significant architectural decisions and trade-offs. Never silently change the stack or add a major dependency.
 
-## 2. Development Principles
+## Workflow
+1. **Inspect and plan:** identify relevant structure, framework versions, entry points, conventions, behavior, and tests. Summarize gaps; propose files, steps, risks/dependencies, assumptions, and verification. Wait for explicit approval before implementation. For a small documentation-only edit, a concise plan is enough.
+2. **Implement:** after approval, change only the approved scope; preserve existing behavior; delegate independent work only when useful. Ask before dependency installation/upgrades, major configuration changes, or scope expansion.
+3. **Verify:** inspect the complete diff (including delegated work); run relevant tests/builds/static checks/migration checks; add/update tests; review errors, authorization, data isolation, and failure recovery. Report only checks actually run and their real results.
+4. **Report:** summarize changes and rationale, files changed, commands/checks and outcomes, trade-offs/limitations, and manual steps.
 
-- Inspect the existing codebase before making changes.
-- Follow the existing architecture and conventions unless there is a clear reason to change them.
-- Prefer simple, maintainable solutions over unnecessary complexity.
-- Keep frontend, backend, and database responsibilities separate.
-- Keep credentials and secrets in environment variables.
-- Never commit `.env` files containing secrets.
-- Validate uploaded files and transformation configurations on the backend.
-- Do not trust client-provided data without server-side validation.
-- Document significant architectural decisions.
-
-## 3. Required Workflow
-
-### Phase 1: Inspect and Plan
-- Identify the frameworks, directory structure, and existing implementation.
-- Understand the relevant code before proposing changes.
-- List the intended changes and files affected.
-- Identify risks, dependencies, and tests.
-- Do not edit files until I approve the plan.
-
-### Phase 2: Implement
-- After approval, implement the agreed plan.
-- Delegate small, independent coding tasks to the configured `implementer` subagent when appropriate.
-- Explicitly invoke the subagent; do not merely describe a hypothetical delegation.
-- Keep delegated tasks narrowly scoped with clear acceptance criteria.
-- Do not delegate security-sensitive decisions without review.
-- Ask before installing dependencies or making significant configuration changes.
-- you may spawn up to 6 subagent depens on the task, ask if >= 4.
-
-### Phase 3: Verify and Review
-- Inspect all modified files and review the actual diff.
-- Run relevant tests, linting, and validation where available.
-- Never claim tests passed unless they were executed successfully.
-- Fix identified problems before reporting completion.
-- Ask for approval before destructive or externally consequential actions.
-
-### Phase 4: Report
-Summarize:
-- Files created or modified.
-- Important implementation decisions.
-- Tests executed and their results.
-- Remaining issues and manual steps.
-
-## 4. Backend Rules
-
-- Follow Django conventions and keep business logic organized.
-- follow ORM, seriallizer approach.
-- Keep secrets and environment-specific settings out of source code.
-- Validate request payloads and transformation configurations.
-- Use appropriate Django models, migrations, and database constraints.
-- Handle exceptions and return consistent API responses.
-- Avoid blocking web requests with long-running ETL jobs when a background worker is appropriate.
-
-## 5. Frontend Rules
-
-- Use reusable React components, keep the ui clean simple, no over using round border.
-- Keep API communication separate from presentation components where appropriate.
-- Validate user input and provide useful error messages.
-- Represent transformation pipelines as a structured form and return as a json.
-- Handle loading, success, and failure states.
-- Do not expose backend credentials or database connection strings to the browser.
-
-## 6. Database and Docker Rules
-
-- Use PostgreSQL as the relational database.
-- Store database credentials in environment variables.
-- Use Docker Compose to coordinate local development services.
-- Use persistent volumes for database data.
-- Never delete database volumes or run destructive migrations without explicit approval.
-- Keep development and production configurations appropriately separated.
+## Mandatory safeguards
+- Enforce per-user/per-tenant authorization for datasets, pipelines, jobs, exports, and connection configurations. Never trust client-supplied user/tenant IDs; prevent cross-user access.
+- Never expose privileged credentials to the browser or log raw datasets, credentials, tokens, or sensitive connection details.
+- Keep long-running ETL out of normal request handlers. Use background jobs when supported by the existing architecture.
+- Do not delete data/files/volumes/cloud resources, expose services, weaken access controls, or perform irreversible/cost-incurring actions without approval.
 - Do not expose PostgreSQL publicly by default.
 
-## 7. Approval and Safety
+## Approval required
+Obtain explicit approval before installing/upgrading dependencies; significant architecture/framework/infrastructure changes; migrations against shared/staging/production databases; deleting data/files/volumes/cloud resources; changing secrets, IAM, network exposure, or access policies; committing, pushing, publishing, or deploying; or actions with external cost/irreversible impact. Explain the action, impact, and command first. Never bypass permission prompts or sandbox restrictions.
 
-- Begin with planning and wait for approval before implementation.
-- Request approval before installing dependencies, executing migrations, deleting data, changing secrets, committing, pushing, or deploying.
-- Explain commands with significant side effects before requesting approval.
-- Do not bypass sandbox restrictions or permission prompts.
-- Do not claim deployment succeeded unless it was actually verified.
+## Completion criteria
+Done means approved requirements are implemented; relevant checks ran and were reviewed; full diff inspected; security/data isolation considered; useful documentation updated; and limitations/manual steps reported.
 
-## 9. Definition of Done
-
-A task is complete when:
-- The requested changes are implemented.
-- Relevant tests and checks have been run.
-- The changes have been reviewed.
-- Documentation is updated when needed.
-- Remaining limitations are clearly reported.
+## Modular guidance
+Use relevant files in `.agents/rules/` for conditional constraints and `.agents/skills/*/SKILL.md` for detailed task procedures. Read a relevant skill before substantial work in that domain; do not load unrelated skills.

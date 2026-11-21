@@ -21,13 +21,15 @@ from .models import Dataset
 
 MAX_ROWS = 500_000
 MAX_COLUMNS = 2048
+MAX_CELLS = 1_000_000
 MAX_EXPANDED_BYTES = 128 * 1024 * 1024
 MAX_XML_NODES = 500_000
 CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+SUPPORTED_UPLOAD_FORMATS = (Dataset.Format.CSV, Dataset.Format.TSV)
 
 
 def limits():
-    return {"max_file_size_bytes": settings.DATASET_MAX_FILE_SIZE_BYTES, "extensions": list(Dataset.Format.values)}
+    return {"max_file_size_bytes": settings.DATASET_MAX_FILE_SIZE_BYTES, "extensions": list(SUPPORTED_UPLOAD_FORMATS)}
 
 
 def validate_delimited(upload, delimiter):
@@ -38,17 +40,20 @@ def validate_delimited(upload, delimiter):
         for row in csv.reader(wrapper, delimiter=delimiter, strict=True):
             if not row:
                 continue
-            rows += 1
-            if rows > MAX_ROWS or len(row) > MAX_COLUMNS:
-                raise invalid_file("This file exceeds the row or column validation limit.")
             if any(CONTROL_CHARACTERS.search(value) for value in row):
                 raise invalid_file("CSV and TSV files must contain readable UTF-8 text.")
             if width is None:
-                if not any(value.strip() for value in row):
-                    raise invalid_file("The file must contain a non-empty first row.")
+                if len(row) > MAX_COLUMNS:
+                    raise invalid_file("This file exceeds the row or column validation limit.")
+                if any(not value.strip() or len(value) > 255 for value in row) or len(row) != len(set(row)):
+                    raise invalid_file("The file must contain unique, non-empty column names up to 255 characters.")
                 width = len(row)
-            elif len(row) != width:
-                raise invalid_file("Each row must have the same number of columns.")
+            else:
+                rows += 1
+                if rows > MAX_ROWS or rows * width > MAX_CELLS:
+                    raise invalid_file("This file exceeds the row, column, or cell validation limit.")
+                if len(row) != width:
+                    raise invalid_file("Each row must have the same number of columns.")
         if width is None:
             raise invalid_file("The file has no tabular content.")
     finally:
@@ -153,13 +158,13 @@ def validate_upload(upload):
     if len(filename) > 255 or CONTROL_CHARACTERS.search(filename):
         raise invalid_file("Choose a filename of at most 255 characters without control characters.")
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if extension not in Dataset.Format.values:
-        raise invalid_file("Choose a CSV, TSV, JSON, XLSX or Parquet file.")
+    if extension not in SUPPORTED_UPLOAD_FORMATS:
+        raise invalid_file("Choose a CSV or TSV file.")
     if not upload.size:
         raise invalid_file("Empty files cannot be uploaded.")
     if upload.size > settings.DATASET_MAX_FILE_SIZE_BYTES:
         raise DatasetError("The file exceeds the upload size limit.", code="file_too_large", status=413, fields={"file": ["The file exceeds the upload size limit."]})
-    validators = {"csv": lambda value: validate_delimited(value, ","), "tsv": lambda value: validate_delimited(value, "\t"), "json": validate_json, "xlsx": validate_xlsx, "parquet": validate_parquet}
+    validators = {"csv": lambda value: validate_delimited(value, ","), "tsv": lambda value: validate_delimited(value, "\t")}
     try:
         upload.seek(0)
         validators[extension](upload)

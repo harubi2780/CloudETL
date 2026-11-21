@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import datasetsApi from '../api/datasets';
+import etlApi from '../api/etl';
 import DatasetsPage from './DatasetsPage';
 import { navigate } from '../navigation';
 
@@ -10,10 +11,23 @@ jest.mock('../api/datasets', () => ({
   __esModule: true,
   default: { list: jest.fn(), upload: jest.fn(), replace: jest.fn(), remove: jest.fn() },
 }));
+jest.mock('../api/etl', () => ({
+  __esModule: true,
+  default: { datasetRows: jest.fn() },
+}));
 
-const limits = { max_file_size_bytes: 25 * 1024 * 1024, extensions: ['csv', 'tsv', 'json', 'xlsx', 'parquet'] };
+const limits = { max_file_size_bytes: 25 * 1024 * 1024, extensions: ['csv', 'tsv'] };
 const dataset = { id: 'source-1', filename: 'orders.csv', format: 'csv', size_bytes: 2048, uploaded_at: '2026-10-24T10:00:00Z' };
 const listResponse = (datasets = [], overrides = {}) => ({ datasets, page: 1, total_pages: 1, total_count: datasets.length, limits, ...overrides });
+const rowsResponse = (overrides = {}) => ({
+  columns: [{ name: 'order_id', type: 'string' }, { name: 'amount', type: 'float' }],
+  rows: [{ order_id: 'ORD1', amount: 42.5 }],
+  page: 1,
+  page_size: 25,
+  total_count: 1,
+  total_pages: 1,
+  ...overrides,
+});
 
 function select(files) {
   fireEvent.change(screen.getByLabelText('Choose files'), { target: { files } });
@@ -22,6 +36,7 @@ function select(files) {
 beforeEach(() => {
   jest.resetAllMocks();
   datasetsApi.list.mockResolvedValue(listResponse());
+  etlApi.datasetRows.mockResolvedValue(rowsResponse());
 });
 
 test('loads real metadata and paginates the dataset list', async () => {
@@ -48,7 +63,7 @@ test('uploads sequentially, prevents double submission, and preserves partial re
   render(<DatasetsPage />);
   await screen.findByText('No datasets yet');
   const first = new File(['order\n1'], 'orders.csv');
-  const second = new File(['broken'], 'broken.json');
+  const second = new File(['broken'], 'broken.csv');
   select([first, second]);
   const upload = screen.getByRole('button', { name: 'Upload 2 files' });
   fireEvent.click(upload);
@@ -133,17 +148,17 @@ test('appends supported files from a mixed drop and reports excluded filenames',
   const dropArea = screen.getByRole('region', { name: 'File drop area' });
   fireEvent.drop(dropArea, { dataTransfer: { files: [
     new File(['id'], 'dropped.csv'),
-    new File(['x'], 'notes.txt'),
-    new File([], 'empty.json'),
+    new File(['x'], 'notes.json'),
+    new File([], 'empty.tsv'),
   ] } });
 
   const list = screen.getByRole('list', { name: 'Upload results' });
   expect(within(list).getByText('dropped.csv')).toBeInTheDocument();
   expect(within(list).getAllByText('Ready to upload')).toHaveLength(1);
   const notices = screen.getByRole('list', { name: 'Files not added' });
-  expect(within(notices).getByText('notes.txt')).toBeInTheDocument();
+  expect(within(notices).getByText('notes.json')).toBeInTheDocument();
   expect(within(notices).getByText(/File type not supported/)).toBeInTheDocument();
-  expect(within(notices).getByText('empty.json')).toBeInTheDocument();
+  expect(within(notices).getByText('empty.tsv')).toBeInTheDocument();
   expect(datasetsApi.upload).not.toHaveBeenCalled();
 });
 
@@ -253,21 +268,21 @@ test('stops remaining uploads on 401 and notifies the session owner once', async
 });
 
 test('requires confirmation to replace, validates selection, and preserves the dataset identity', async () => {
-  const replaced = { ...dataset, filename: 'updated.json', format: 'json' };
+  const replaced = { ...dataset, filename: 'updated.tsv', format: 'tsv' };
   datasetsApi.list.mockResolvedValueOnce(listResponse([dataset])).mockResolvedValueOnce(listResponse([replaced]));
   datasetsApi.replace.mockResolvedValue({ dataset: replaced, warning: 'Old file cleanup needs attention.' });
   render(<DatasetsPage />);
   await userEvent.click(await screen.findByRole('button', { name: 'Replace orders.csv' }));
   expect(datasetsApi.replace).not.toHaveBeenCalled();
   const picker = screen.getByLabelText('Replacement file');
-  fireEvent.change(picker, { target: { files: [new File(['x'], 'bad.exe')] } });
+  fireEvent.change(picker, { target: { files: [new File(['x'], 'bad.json')] } });
   expect(screen.getByRole('alert')).toHaveTextContent('File type not supported');
   expect(screen.getByRole('button', { name: 'Confirm replacement' })).toBeDisabled();
-  const file = new File(['[]'], 'updated.json');
+  const file = new File(['id\n1'], 'updated.tsv');
   fireEvent.change(picker, { target: { files: [file] } });
   expect(datasetsApi.replace).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('button', { name: 'Confirm replacement' }));
-  expect(await screen.findByRole('rowheader', { name: 'updated.json' })).toBeInTheDocument();
+  expect(await screen.findByRole('rowheader', { name: 'updated.tsv' })).toBeInTheDocument();
   expect(datasetsApi.replace).toHaveBeenCalledWith(dataset.id, file);
   expect(screen.getByText(/orders.csv replaced. Old file cleanup needs attention./)).toBeInTheDocument();
 });
@@ -455,15 +470,15 @@ test('clears a source selection after deletion', async () => {
 });
 
 test('requires fresh pipeline selection after replacing a source', async () => {
-  const replaced = { ...dataset, filename: 'new.json', format: 'json' };
+  const replaced = { ...dataset, filename: 'new.tsv', format: 'tsv' };
   datasetsApi.list.mockResolvedValueOnce(listResponse([dataset])).mockResolvedValueOnce(listResponse([replaced]));
   datasetsApi.replace.mockResolvedValue({ dataset: replaced });
   render(<DatasetsPage />);
   await userEvent.click(await screen.findByRole('checkbox', { name: 'Select orders.csv for pipeline' }));
   await userEvent.click(screen.getByRole('button', { name: 'Replace orders.csv' }));
-  fireEvent.change(screen.getByLabelText('Replacement file'), { target: { files: [new File(['[]'], 'new.json')] } });
+  fireEvent.change(screen.getByLabelText('Replacement file'), { target: { files: [new File(['id\n1'], 'new.tsv')] } });
   await userEvent.click(screen.getByRole('button', { name: 'Confirm replacement' }));
-  expect(await screen.findByRole('checkbox', { name: 'Select new.json for pipeline' })).toBeDisabled();
+  expect(await screen.findByRole('checkbox', { name: 'Select new.tsv for pipeline' })).not.toBeChecked();
   expect(screen.getByRole('button', { name: 'Create pipeline' })).toBeDisabled();
   expect(screen.queryByRole('list', { name: 'Selected pipeline sources' })).not.toBeInTheDocument();
 });
@@ -509,4 +524,92 @@ test('a failed dataset refresh marks previously loaded usage as stale', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
   expect(await screen.findByText('Last loaded usage. Refresh datasets to update.')).toBeInTheDocument();
   expect(screen.getByText('2 MiB of 10 MiB used')).toBeInTheDocument();
+});
+
+test('allows reviewing uploaded queue file data, closing review, and restoring focus', async () => {
+  datasetsApi.upload.mockResolvedValue({ dataset });
+  datasetsApi.list.mockResolvedValueOnce(listResponse()).mockResolvedValueOnce(listResponse([dataset]));
+  render(<DatasetsPage />);
+  await screen.findByText('No datasets yet');
+  select([new File(['order_id,amount\nORD1,42.5'], 'orders.csv')]);
+  await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+  const results = screen.getByRole('list', { name: 'Upload results' });
+  const reviewBtn = await within(results).findByRole('button', { name: 'Review data for orders.csv' });
+  await userEvent.click(reviewBtn);
+  expect(etlApi.datasetRows).toHaveBeenCalledWith(dataset.id, { page: 1, pageSize: 25, signal: expect.any(AbortSignal) });
+  expect(await screen.findByRole('heading', { name: 'Data review: orders.csv' })).toBeInTheDocument();
+  expect(await screen.findByRole('cell', { name: 'ORD1' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Close review' }));
+  expect(screen.queryByRole('heading', { name: 'Data review: orders.csv' })).not.toBeInTheDocument();
+  expect(reviewBtn).toHaveFocus();
+});
+
+test('reviews dataset table rows with pagination, rows-per-page, error retry, and 401 expiry', async () => {
+  const stored = { ...dataset, id: 'json-1', filename: 'people.json', format: 'json' };
+  datasetsApi.list.mockResolvedValue(listResponse([dataset, stored]));
+  etlApi.datasetRows
+    .mockRejectedValueOnce(new Error('Could not read rows.'))
+    .mockResolvedValueOnce(rowsResponse({ total_count: 30, total_pages: 2 }))
+    .mockResolvedValueOnce(rowsResponse({ rows: [{ order_id: 'ORD26', amount: 99 }], page: 2, total_count: 30, total_pages: 2 }))
+    .mockResolvedValueOnce(rowsResponse({ page_size: 50, total_count: 30, total_pages: 1 }));
+  const onSessionExpired = jest.fn();
+  render(<DatasetsPage onSessionExpired={onSessionExpired} />);
+  expect(await screen.findByRole('button', { name: 'Review data for people.json' })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Review data for orders.csv' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not read rows.');
+  await userEvent.click(screen.getByRole('button', { name: 'Retry review' }));
+  expect(await screen.findByRole('cell', { name: 'ORD1' })).toBeInTheDocument();
+
+  const reviewNav = screen.getByRole('navigation', { name: 'Dataset review pages' });
+  await userEvent.click(within(reviewNav).getByRole('button', { name: 'Next' }));
+  expect(await screen.findByRole('cell', { name: 'ORD26' })).toBeInTheDocument();
+  expect(etlApi.datasetRows).toHaveBeenLastCalledWith(dataset.id, { page: 2, pageSize: 25, signal: expect.any(AbortSignal) });
+
+  fireEvent.change(screen.getByLabelText(/Rows per page/), { target: { value: '50' } });
+  expect(await screen.findByRole('cell', { name: 'ORD1' })).toBeInTheDocument();
+  expect(etlApi.datasetRows).toHaveBeenLastCalledWith(dataset.id, { page: 1, pageSize: 50, signal: expect.any(AbortSignal) });
+
+  etlApi.datasetRows.mockRejectedValueOnce({ status: 401, message: 'Please sign in again.' });
+  await userEvent.click(screen.getByRole('button', { name: 'Review data for orders.csv' }));
+  await waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Please sign in again.');
+});
+
+test('aborts in-flight review requests and updates review panel on dataset replace or delete', async () => {
+  const second = { ...dataset, id: 'source-2', filename: 'customers.tsv', format: 'tsv' };
+  const replaced = { ...dataset, filename: 'orders-v2.tsv', format: 'tsv' };
+  let finishFirst;
+  datasetsApi.list
+    .mockResolvedValueOnce(listResponse([dataset, second]))
+    .mockResolvedValueOnce(listResponse([replaced, second]))
+    .mockResolvedValueOnce(listResponse([second]));
+  datasetsApi.replace.mockResolvedValue({ dataset: replaced });
+  datasetsApi.remove.mockResolvedValue({ deleted: true });
+  etlApi.datasetRows
+    .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }))
+    .mockResolvedValueOnce(rowsResponse({ rows: [{ order_id: 'CUST1', amount: 10 }] }))
+    .mockResolvedValueOnce(rowsResponse({ rows: [{ order_id: 'V1_ROW', amount: 55 }] }))
+    .mockResolvedValueOnce(rowsResponse({ rows: [{ order_id: 'V2_ROW', amount: 77 }] }));
+
+  render(<DatasetsPage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Review data for orders.csv' }));
+  const firstSignal = etlApi.datasetRows.mock.calls[0][1].signal;
+  await userEvent.click(screen.getByRole('button', { name: 'Review data for customers.tsv' }));
+  expect(firstSignal.aborted).toBe(true);
+  await act(async () => { finishFirst(rowsResponse({ rows: [{ order_id: 'STALE', amount: 0 }] })); });
+  expect(await screen.findByRole('cell', { name: 'CUST1' })).toBeInTheDocument();
+  expect(screen.queryByRole('cell', { name: 'STALE' })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Review data for orders.csv' }));
+  await screen.findByRole('cell', { name: 'V1_ROW' });
+  await userEvent.click(screen.getByRole('button', { name: 'Replace orders.csv' }));
+  fireEvent.change(screen.getByLabelText('Replacement file'), { target: { files: [new File(['order_id\nV2'], 'orders-v2.tsv')] } });
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm replacement' }));
+  expect(await screen.findByRole('heading', { name: 'Data review: orders-v2.tsv' })).toBeInTheDocument();
+  expect(await screen.findByRole('cell', { name: 'V2_ROW' })).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Delete orders-v2.tsv' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm deletion' }));
+  await screen.findByText('orders-v2.tsv deleted.');
+  expect(screen.queryByRole('heading', { name: /Data review:/ })).not.toBeInTheDocument();
 });

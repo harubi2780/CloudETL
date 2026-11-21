@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import datasetsApi from '../api/datasets';
+import etlApi from '../api/etl';
+import DataTable from '../components/etl/DataTable';
+import Pagination from '../components/etl/Pagination';
+import Spinner from '../components/etl/Spinner';
 import StorageUsage from '../components/StorageUsage';
 import { navigate } from '../navigation';
 import './DatasetsPage.css';
 
 const defaultLimits = {
   max_file_size_bytes: 25 * 1024 * 1024,
-  extensions: ['csv', 'tsv', 'json', 'xlsx', 'parquet'],
+  extensions: ['csv', 'tsv'],
 };
 const maxSelection = 10;
 const maxResultHistory = 20;
@@ -64,7 +68,15 @@ export default function DatasetsPage({ onSessionExpired }) {
   const [managementResult, setManagementResult] = useState('');
   const [pipelineSources, setPipelineSources] = useState({});
   const [pipelineError, setPipelineError] = useState('');
+  const [reviewTarget, setReviewTarget] = useState(null);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewPageSize, setReviewPageSize] = useState(25);
+  const [reviewAttempt, setReviewAttempt] = useState(0);
+  const [reviewState, setReviewState] = useState({ status: 'idle', data: null, error: '' });
   const managementTrigger = useRef(null);
+  const reviewTrigger = useRef(null);
+  const expired = useRef(onSessionExpired);
+  expired.current = onSessionExpired;
   const queueRef = useRef(queue);
   const active = useRef(true);
   const controller = useRef(null);
@@ -108,6 +120,39 @@ export default function DatasetsPage({ onSessionExpired }) {
   useEffect(() => {
     if (!management && !managementBusy) managementTrigger.current?.focus();
   }, [management, managementBusy]);
+
+  useEffect(() => {
+    if (!reviewTarget) {
+      setReviewState({ status: 'idle', data: null, error: '' });
+      return undefined;
+    }
+    const requestController = new AbortController();
+    setReviewState({ status: 'loading', data: null, error: '' });
+    etlApi.datasetRows(reviewTarget.id, { page: reviewPage, pageSize: reviewPageSize, signal: requestController.signal }).then((result) => {
+      if (!active.current || requestController.signal.aborted) return;
+      setReviewState({ status: 'ready', data: result, error: '' });
+    }).catch((error) => {
+      if (!active.current || requestController.signal.aborted || error.name === 'AbortError') return;
+      if (error.status === 401) expired.current?.();
+      setReviewState({ status: 'error', data: null, error: error.message || 'Could not load dataset rows.' });
+    });
+    return () => requestController.abort();
+  }, [reviewTarget, reviewPage, reviewPageSize, reviewAttempt]);
+
+  function openReview(dataset, trigger = null) {
+    if (!dataset || !canProcess(dataset) || uploading || managementBusy || Boolean(management)) return;
+    reviewTrigger.current = trigger;
+    setReviewTarget(dataset);
+    setReviewPage(1);
+    setReviewAttempt((value) => value + 1);
+  }
+
+  function closeReview() {
+    setReviewTarget(null);
+    const trigger = reviewTrigger.current;
+    reviewTrigger.current = null;
+    trigger?.focus?.();
+  }
 
   function addFiles(fileList) {
     const files = Array.from(fileList || []);
@@ -298,6 +343,17 @@ export default function DatasetsPage({ onSessionExpired }) {
       if (!active.current) return;
       setManagementResult(`${dataset.filename} ${type === 'replace' ? 'replaced' : 'deleted'}.${result.warning ? ` ${result.warning}` : ''}`);
       setManagement(null);
+      if (reviewTarget?.id === dataset.id) {
+        if (type === 'replace' && canProcess(result.dataset)) {
+          setReviewState({ status: 'loading', data: null, error: '' });
+          setReviewTarget(result.dataset);
+          setReviewPage(1);
+          setReviewAttempt((value) => value + 1);
+        } else {
+          setReviewTarget(null);
+          reviewTrigger.current = null;
+        }
+      }
       // A replaced source may have a new format or size; require fresh selection.
       setPipelineSources((previous) => {
         const next = { ...previous };
@@ -382,6 +438,14 @@ export default function DatasetsPage({ onSessionExpired }) {
                       {item.message && ` — ${item.message}`}
                     </span>
                     {item.status === 'queued' && <button className="datasets-remove-button" type="button" onClick={() => removeFile(item.id)} disabled={uploading || managementBusy} aria-label={`Remove ${item.fileName}`}>Remove</button>}
+                    {item.status === 'uploaded' && item.dataset && canProcess(item.dataset) && (
+                      <button className="button button-secondary" type="button"
+                        disabled={uploading || managementBusy || Boolean(management)}
+                        aria-label={`Review data for ${item.dataset.filename || item.fileName}`}
+                        aria-expanded={reviewTarget?.id === item.dataset.id}
+                        aria-controls="dataset-review-panel"
+                        onClick={(event) => openReview(item.dataset, event.currentTarget)}>Review data</button>
+                    )}
                     {item.status === 'failed' && item.file && <button className="datasets-remove-button" type="button" onClick={() => retryUpload(item.id)} disabled={uploading || managementBusy || Boolean(management)} aria-label={`Retry ${item.fileName}`}>Retry</button>}
                   </span>
                 </li>
@@ -393,9 +457,63 @@ export default function DatasetsPage({ onSessionExpired }) {
           </button>
           {uploadedSources.length > 0 && <button className="button button-secondary datasets-use-uploaded" type="button"
             disabled={uploading || managementBusy || Boolean(management)} onClick={() => createPipeline(uploadedSources)}>Use uploaded files</button>}
-          {uploadedSources.length > 0 && <p className="datasets-helper">Use {uploadedSources.length} successfully uploaded CSV/TSV {uploadedSources.length === 1 ? 'file' : 'files'} as pipeline sources. Other formats remain available in storage.</p>}
+          {uploadedSources.length > 0 && <p className="datasets-helper">Use {uploadedSources.length} successfully uploaded CSV/TSV {uploadedSources.length === 1 ? 'file' : 'files'} as pipeline sources.</p>}
         </form>
       </section>
+
+      {reviewTarget && (
+        <section id="dataset-review-panel" className="datasets-review" aria-labelledby="dataset-review-title">
+          <div className="datasets-review-header">
+            <h2 id="dataset-review-title">Data review: {reviewTarget.filename}</h2>
+            <div className="datasets-review-controls">
+              <label htmlFor="dataset-review-page-size">
+                Rows per page{' '}
+                <select id="dataset-review-page-size" value={reviewPageSize}
+                  disabled={reviewState.status === 'loading'}
+                  onChange={(event) => { setReviewPageSize(Number(event.target.value)); setReviewPage(1); }}>
+                  {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </label>
+              <button className="button button-secondary" type="button" onClick={closeReview}>Close review</button>
+            </div>
+          </div>
+          {reviewState.status === 'loading' && (
+            <p className="etl-loading" role="status"><Spinner />Loading dataset rows…</p>
+          )}
+          {reviewState.status === 'error' && (
+            <div className="datasets-review-error">
+              <p className="form-alert" role="alert">{reviewState.error}</p>
+              <button className="button button-secondary" type="button" onClick={() => setReviewAttempt((value) => value + 1)}>
+                Retry review
+              </button>
+            </div>
+          )}
+          {reviewState.status === 'ready' && reviewState.data && (
+            <>
+              <p className="datasets-helper" aria-live="polite">
+                Rows {reviewState.data.total_count ? (reviewState.data.page - 1) * reviewState.data.page_size + 1 : 0}
+                –{Math.min(reviewState.data.page * reviewState.data.page_size, reviewState.data.total_count)} of {reviewState.data.total_count}.
+                {' '}{reviewState.data.columns.length} {reviewState.data.columns.length === 1 ? 'column' : 'columns'}.
+              </p>
+              <DataTable
+                columns={reviewState.data.columns}
+                rows={reviewState.data.rows}
+                caption={`Dataset rows for ${reviewTarget.filename} · page ${reviewState.data.page}`}
+                rowOffset={(reviewState.data.page - 1) * reviewState.data.page_size}
+                selectionKey={`dataset:${reviewTarget.id}:${reviewState.data.page}:${reviewState.data.page_size}`}
+              />
+              <Pagination
+                page={reviewState.data.page}
+                totalPages={reviewState.data.total_pages}
+                totalCount={reviewState.data.total_count}
+                onPageChange={setReviewPage}
+                disabled={reviewState.status === 'loading'}
+                label="Dataset review pages"
+              />
+            </>
+          )}
+        </section>
+      )}
 
       <section className="datasets-list" aria-labelledby="datasets-list-title">
         <div className="datasets-list-heading">
@@ -467,6 +585,12 @@ export default function DatasetsPage({ onSessionExpired }) {
                     <td><time dateTime={dataset.uploaded_at}>{new Date(dataset.uploaded_at).toLocaleString()}</time></td>
                     <td>{canProcess(dataset) ? 'ETL ready' : <span className="datasets-storage-only">Storage only</span>}</td>
                     <td><div className="datasets-management-actions">
+                      <button className="button button-secondary" type="button"
+                        disabled={!canProcess(dataset) || uploading || managementBusy || Boolean(management) || listing.status !== 'ready'}
+                        aria-label={`Review data for ${dataset.filename}`}
+                        aria-expanded={reviewTarget?.id === dataset.id}
+                        aria-controls="dataset-review-panel"
+                        onClick={(event) => openReview(dataset, event.currentTarget)}>Review data</button>
                       <button className="button button-secondary" type="button" disabled={uploading || managementBusy || Boolean(management) || listing.status !== 'ready'}
                         aria-label={`Replace ${dataset.filename}`} onClick={(event) => beginManagement('replace', dataset, event.currentTarget)}>Replace</button>
                       <button className="button datasets-delete-button" type="button" disabled={uploading || managementBusy || Boolean(management) || listing.status !== 'ready'}

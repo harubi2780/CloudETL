@@ -1,0 +1,37 @@
+# Standalone Compose stack for EC2 #2 (Django Backend + ETL Worker).
+# Uses an external PostgreSQL / RDS instance and AWS S3 via the EC2 IAM Instance Role.
+services:
+  backend: &aws-backend-service
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_BIND_HOST:-0.0.0.0}:${BACKEND_PORT:-8000}:8000"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS to your domain/hostnames}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:?Set DJANGO_CSRF_TRUSTED_ORIGINS to your HTTPS/HTTP origin(s)}
+      DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-true}
+      DJANGO_SESSION_COOKIE_SECURE: ${DJANGO_SESSION_COOKIE_SECURE:-true}
+      DJANGO_CSRF_COOKIE_SECURE: ${DJANGO_CSRF_COOKIE_SECURE:-true}
+      DATASET_STORAGE_BACKEND: s3
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:?Set AWS_STORAGE_BUCKET_NAME}
+      AWS_S3_REGION_NAME: ${AWS_S3_REGION_NAME:?Set AWS_S3_REGION_NAME}
+      AWS_S3_ENDPOINT_URL: ""
+      AWS_S3_ADDRESSING_STYLE: virtual
+      POSTGRES_DB: ${POSTGRES_DB:-cloudetl}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-cloudetl_app}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD}
+      DB_HOST: ${DB_HOST:?Set DB_HOST to your RDS/PostgreSQL endpoint}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_SSLMODE: ${DB_SSLMODE:-require}
+      DATASET_MAX_FILE_SIZE_BYTES: ${DATASET_MAX_FILE_SIZE_BYTES:-26214400}
+      ACCOUNT_STORAGE_LIMIT_BYTES: ${ACCOUNT_STORAGE_LIMIT_BYTES:-524288000}
+      BILLING_DEMO_ENABLED: "false"
+      ETL_RUN_TIMEOUT_SECONDS: ${ETL_RUN_TIMEOUT_SECONDS:-300}
+
+  etl-worker:
+    <<: *aws-backend-service
+    ports: []
+    command: ["python", "manage.py", "run_etl_worker"]

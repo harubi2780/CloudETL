@@ -29,7 +29,9 @@ class EtlQueueConcurrencyTests(TransactionTestCase):
             file="datasets/private-test-input.csv", size_bytes=4, sha256="a" * 64,
         )
         self.payload = {
-            "name": "Concurrent admission", "datasetId": str(self.dataset.pk), "steps": [],
+            "name": "Concurrent admission",
+            "datasetId": str(self.dataset.pk),
+            "steps": [{"type": "select_columns", "config": {"selectedColumns": ["id"]}}],
         }
 
     def create_run(self, **extra):

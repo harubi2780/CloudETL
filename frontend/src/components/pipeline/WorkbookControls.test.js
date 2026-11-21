@@ -13,7 +13,8 @@ test('source tabs keep the starting file identifiable and support arrow/Home/End
   }
   render(<Sheets />);
   const first = screen.getByRole('tab', { name: /orders.csv/ });
-  const second = screen.getByRole('tab', { name: 'people.tsv' });
+  const second = screen.getByRole('tab', { name: /people\.tsv/ });
+  expect(second).toHaveTextContent('Unused');
   expect(first).toHaveAttribute('aria-selected', 'true');
   expect(within(first).getByLabelText('Starting dataset')).toBeInTheDocument();
   first.focus();
@@ -28,11 +29,16 @@ test('source tabs keep the starting file identifiable and support arrow/Home/End
   expect(first).toHaveFocus();
 });
 
-test('add source action is separate from source tabs', () => {
+test('add source action is separate from source tabs and split toggle fires when enabled', () => {
   const add = jest.fn();
-  render(<SourceTabs sources={sources} activeId="one" primaryId="one" onSelect={jest.fn()} onAdd={add} />);
+  const toggleSplit = jest.fn();
+  render(<SourceTabs sources={sources} activeId="one" primaryId="one" canSplit splitView={false} onToggleSplit={toggleSplit} onSelect={jest.fn()} onAdd={add} />);
   fireEvent.click(screen.getByRole('button', { name: 'Add source sheet' }));
   expect(add).toHaveBeenCalledTimes(1);
+  const splitButton = screen.getByRole('button', { name: 'Compare side-by-side' });
+  expect(splitButton).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(splitButton);
+  expect(toggleSplit).toHaveBeenCalledTimes(1);
 });
 
 test('ribbon actions are grouped, capability constrained, and disabled until source requirements are met', () => {
@@ -50,4 +56,19 @@ test('ribbon actions are grouped, capability constrained, and disabled until sou
   rerender(<WorkbookToolbar capabilities={{ operations: { concat: {} } }} sourceCount={2} onAddStep={onAddStep} disabled />);
   expect(screen.queryByRole('button', { name: 'Add Join tables step' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Add Append rows step' })).toBeDisabled();
+});
+
+test('date formatting action is hidden unless a date column is available', () => {
+  const capabilities = { operations: Object.fromEntries(operations.map((operation) => [operation.type, {}])) };
+  const { rerender } = render(<WorkbookToolbar capabilities={capabilities} sourceCount={1} onAddStep={jest.fn()}
+    columns={[{ name: 'order_id', type: 'string' }, { name: 'amount', type: 'float' }]} />);
+  expect(screen.queryByRole('button', { name: 'Add Format dates step' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add Clean text step' })).toBeInTheDocument();
+
+  rerender(<WorkbookToolbar capabilities={capabilities} sourceCount={1} onAddStep={jest.fn()}
+    columns={[{ name: 'order_id', type: 'string' }, { name: 'order_date', type: 'datetime' }]} />);
+  expect(screen.getByRole('button', { name: 'Add Format dates step' })).toBeInTheDocument();
+
+  rerender(<WorkbookToolbar capabilities={capabilities} sourceCount={1} onAddStep={jest.fn()} hasDateColumns={false} />);
+  expect(screen.queryByRole('button', { name: 'Add Format dates step' })).not.toBeInTheDocument();
 });

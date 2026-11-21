@@ -9,8 +9,38 @@ test('uses the shared JSON request layer for versioned run and pagination reques
   expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/runs/?page=2&status=succeeded', expect.objectContaining({ credentials: 'same-origin' }));
   await etlApi.rows('owned-id', { page: 3, pageSize: 50 });
   expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/runs/owned-id/rows/?page=3&page_size=50', expect.anything());
+  await etlApi.datasetRows('ds/1', { page: 2, pageSize: 25 });
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/datasets/ds%2F1/rows/?page=2&page_size=25', expect.objectContaining({ credentials: 'same-origin' }));
+  await etlApi.runSourceRows('owned-id', { page: 2, pageSize: 50, datasetId: 'ds-1' });
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/runs/owned-id/source-rows/?page=2&page_size=50&dataset_id=ds-1', expect.objectContaining({ credentials: 'same-origin' }));
+  await etlApi.runSourceRows('owned-id');
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/runs/owned-id/source-rows/?page=1&page_size=25', expect.objectContaining({ credentials: 'same-origin' }));
   await etlApi.submit({ name: 'Clean', datasetId: 'id', steps: [] });
   expect(global.fetch.mock.calls.at(-1)[1]).toMatchObject({ method: 'POST', body: '{"name":"Clean","datasetId":"id","steps":[]}' });
+  await etlApi.listPipelines({ page: 2 });
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/pipelines/?page=2', expect.objectContaining({ credentials: 'same-origin' }));
+  await etlApi.getPipeline('pipe-id');
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/pipelines/pipe-id/', expect.objectContaining({ credentials: 'same-origin' }));
+});
+
+test('saved pipeline mutations use the shared CSRF request layer', async () => {
+  global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ csrfToken: 'pipe-csrf' }) });
+  await request('/api/auth/csrf/');
+  global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ pipeline: { id: 'p1' } }) });
+  await etlApi.createPipeline({ name: 'Saved', datasetId: 'd1', steps: [] });
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/pipelines/', expect.objectContaining({
+    method: 'POST', credentials: 'same-origin', headers: expect.objectContaining({ 'X-CSRFToken': 'pipe-csrf' }),
+  }));
+  global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ pipeline: { id: 'p1' } }) });
+  await etlApi.updatePipeline('p1', { name: 'Saved 2', datasetId: 'd1', steps: [] });
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/pipelines/p1/', expect.objectContaining({
+    method: 'PUT', credentials: 'same-origin', headers: expect.objectContaining({ 'X-CSRFToken': 'pipe-csrf' }),
+  }));
+  global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ deleted: true }) });
+  await etlApi.deletePipeline('p1');
+  expect(global.fetch).toHaveBeenLastCalledWith('/api/etl/pipelines/p1/', expect.objectContaining({
+    method: 'DELETE', credentials: 'same-origin', headers: expect.objectContaining({ 'X-CSRFToken': 'pipe-csrf' }),
+  }));
 });
 
 test('deletes only a result file through the shared credentialed CSRF request layer', async () => {

@@ -66,6 +66,20 @@
 .etl-complete { padding-top: 10px; border-top: 1px solid #e4e7ec; }
 .etl-json { max-height: 25rem; overflow: auto; padding: 12px; background: #f8fafc; font-size: .8rem; line-height: 1.45; }
 .etl-section summary { cursor: pointer; color: #344054; font-size: 14px; }
-.etl-config-details { padding: 12px 14px; }
+.etl-config-details { padding: 12px 14px; margin-top: 10px; border: 1px solid #e4e7ec; }
+.etl-step-summary-list { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.etl-step-summary-item { padding: 8px 10px; border: 1px solid #e4e7ec; background: #f8fafc; }
+.etl-step-summary-item.is-disabled { opacity: .7; background: #f9fafb; }
+.etl-step-summary-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+.etl-step-index { color: #667085; font-variant-numeric: tabular-nums; }
+.etl-step-summary-desc { margin: 4px 0 0; color: #475467; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.etl-badge { display: inline-block; padding: 1px 6px; border: 1px solid #cbd5e1; border-radius: 2px; background: #fff; color: #344054; font-size: 11px; font-weight: 500; }
+.etl-badge-muted { color: #667085; border-color: #d0d5dd; }
+.etl-column-diff { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e4e7ec; font-size: 13px; color: #344054; }
+.etl-diff-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.etl-comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.etl-comparison-single { display: grid; grid-template-columns: minmax(0, 1fr); }
+.etl-comparison-pane h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .etl-page button:focus-visible, .etl-page a:focus-visible, .etl-page select:focus-visible, .etl-table-scroll:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+@media (max-width: 1100px) { .etl-comparison-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .etl-section { padding: 12px; } .etl-toolbar { align-items: flex-start; } .etl-toolbar label { flex-wrap: wrap; } .etl-facts { grid-template-columns: 1fr 1fr; } .etl-download-controls { justify-content: flex-start; } .etl-download-description { text-align: left; } .etl-page .button, .etl-toolbar select, .etl-download-controls select { min-height: 40px; } }

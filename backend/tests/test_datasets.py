@@ -80,21 +80,9 @@ class DatasetApiTests(TestCase):
         return response
 
     def valid_formats(self):
-        workbook_buffer = io.BytesIO()
-        workbook = openpyxl.Workbook()
-        workbook.active.append(["name", "value"])
-        workbook.active.append(["river", 1])
-        workbook.save(workbook_buffer)
-        workbook.close()
-
-        parquet_buffer = io.BytesIO()
-        pq.write_table(pa.table({"name": ["river"], "value": [1]}), parquet_buffer)
         return {
             "csv": b"\xef\xbb\xbfname,value\r\nriver,1\r\n",
             "tsv": b"name\tvalue\nriver\t1\n",
-            "json": b'[{"name":"river","value":1}]\n',
-            "xlsx": workbook_buffer.getvalue(),
-            "parquet": parquet_buffer.getvalue(),
         }
 
     def test_all_supported_formats_preserve_original_bytes_and_private_hash(self):
@@ -122,10 +110,10 @@ class DatasetApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(set(data), {"datasets", "page", "total_pages", "total_count", "limits", "storage"})
-        self.assertEqual(data["total_count"], 5)
+        self.assertEqual(data["total_count"], 2)
         self.assertEqual(data["limits"], {
             "max_file_size_bytes": settings.DATASET_MAX_FILE_SIZE_BYTES,
-            "extensions": ["csv", "tsv", "json", "xlsx", "parquet"],
+            "extensions": ["csv", "tsv"],
         })
         for payload in data["datasets"]:
             self.assert_public_metadata(payload, Dataset.objects.get(pk=payload["id"]))
@@ -187,12 +175,23 @@ class DatasetApiTests(TestCase):
         self.assertEqual(self.stored_files(), set())
 
     def test_unsupported_disguised_empty_and_binary_files_are_rejected(self):
+        workbook_buffer = io.BytesIO()
+        workbook = openpyxl.Workbook()
+        workbook.active.append(["name", "value"])
+        workbook.active.append(["river", 1])
+        workbook.save(workbook_buffer)
+        workbook.close()
+        parquet_buffer = io.BytesIO()
+        pq.write_table(pa.table({"name": ["river"], "value": [1]}), parquet_buffer)
         for filename, content in (
             ("source.exe", b"name,value\nriver,1\n"),
             ("source", b"name,value\nriver,1\n"),
             ("empty.csv", b""),
             ("blank.csv", b"\n\n"),
             ("blank.tsv", b"\t \n"),
+            ("valid.json", b'[{"name":"river","value":1}]\n'),
+            ("valid.xlsx", workbook_buffer.getvalue()),
+            ("valid.parquet", parquet_buffer.getvalue()),
             ("fake.xlsx", b"name,value\nriver,1\n"),
             ("fake.parquet", b"name,value\nriver,1\n"),
             ("fake.json", b"<html>not JSON</html>"),
@@ -201,32 +200,6 @@ class DatasetApiTests(TestCase):
             with self.subTest(filename=filename):
                 self.assert_invalid_upload(filename, content)
 
-    def test_json_rejects_malformed_primitives_nonfinite_and_excessive_nesting(self):
-        for content in (
-            b'{"broken":',
-            b'{"trailing":1,}',
-            b'"string"',
-            b"12",
-            b"true",
-            b"null",
-            b'{"value":NaN}',
-            b"[Infinity]",
-            b"[-Infinity]",
-            b"[" * 65 + b"0" + b"]" * 65,
-            b'{"name":"\xff"}',
-        ):
-            with self.subTest(content=repr(content[:80])):
-                self.assert_invalid_upload("invalid.json", content)
-
-    def test_json_depth_boundary_and_delimiters_inside_strings_are_valid(self):
-        for content in (
-            b"[" * 64 + b"0" + b"]" * 64,
-            b'{"text":"[[[[ braces { are strings } ]]]] and \\\"quotes\\\""}',
-        ):
-            with self.subTest(content=repr(content[:80])):
-                response = self.post_file("nested.json", content)
-                self.assertEqual(response.status_code, 201, response.content)
-
     def test_delimited_files_reject_inconsistent_rows_invalid_utf8_and_bad_quoting(self):
         for filename, content in (
             ("inconsistent.csv", b"id,value\n1,2,3\n"),
@@ -234,33 +207,22 @@ class DatasetApiTests(TestCase):
             ("invalid.csv", b"id,value\n1,\xff\n"),
             ("invalid.tsv", b"id\tvalue\n1\t\xff\n"),
             ("unclosed.csv", b'id,value\n1,"unclosed\n'),
+            ("duplicate_header.csv", b"a,a\n1,2\n"),
+            ("duplicate_header.tsv", b"a\ta\n1\t2\n"),
+            ("blank_col.csv", b"a,\n1,2\n"),
+            ("whitespace_col.csv", b"a, \n1,2\n"),
+            ("long_col.csv", ("x" * 256 + ",b\n1,2\n").encode("utf-8")),
         ):
             with self.subTest(filename=filename):
                 self.assert_invalid_upload(filename, content)
 
-    def test_xlsx_xml_entities_and_excessive_nesting_fail_before_workbook_loading(self):
-        payloads = (
-            ("entity", b'<!DOCTYPE workbook [<!ENTITY marker "PRIVATE_ENTITY_VALUE">]><workbook>&marker;</workbook>'),
-            ("depth", b"<node>" * 65 + b"value" + b"</node>" * 65),
-        )
-        for label, xml in payloads:
-            with self.subTest(label=label):
-                archive_buffer = io.BytesIO()
-                with ZipFile(archive_buffer, "w") as archive:
-                    archive.writestr("xl/workbook.xml", xml)
-                with patch("datasets.validators.openpyxl.load_workbook") as load_workbook:
-                    response = self.assert_invalid_upload(f"{label}.xlsx", archive_buffer.getvalue())
-                load_workbook.assert_not_called()
-                self.assertNotIn("PRIVATE_ENTITY_VALUE", response.content.decode())
-                if label == "depth":
-                    self.assertIn("XML complexity", response.json()["error"]["message"])
-
-    def test_parquet_with_truncated_footer_is_rejected_without_storing_content(self):
-        valid_parquet = self.valid_formats()["parquet"]
-        self.assertTrue(valid_parquet.endswith(b"PAR1"))
-        for missing_bytes in (4, 8):
-            with self.subTest(missing_bytes=missing_bytes):
-                self.assert_invalid_upload("truncated.parquet", valid_parquet[:-missing_bytes])
+    def test_delimited_replace_rejects_invalid_headers_and_cell_limit(self):
+        dataset = self.management_dataset()
+        for content in (b"a,a\n1,2\n", b"a,\n1,2\n", ("x" * 256 + ",b\n1,2\n").encode("utf-8")):
+            response = self.replace_file(dataset, content)
+            self.assertEqual(response.status_code, 400)
+        with patch("datasets.validators.MAX_CELLS", 4):
+            self.assert_invalid_upload("too_many_cells.csv", b"a,b\n1,2\n3,4\n5,6\n")
 
     @override_settings(DATASET_MAX_FILE_SIZE_BYTES=8)
     def test_actual_oversized_upload_chunks_are_rejected_before_service_and_storage(self):

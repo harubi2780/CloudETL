@@ -1,4 +1,5 @@
 import logging
+import uuid
 from functools import wraps
 
 from django.conf import settings
@@ -49,6 +50,16 @@ def dataset_preview(request, dataset_id):
     return JsonResponse({"preview": etl_service.dataset_preview(request.user, dataset_id)})
 
 
+@endpoint(["GET"])
+def dataset_rows(request, dataset_id):
+    query_parameters(request, ("page", "page_size"))
+    page = positive_integer(request, "page", 1)
+    page_size = positive_integer(request, "page_size", 25)
+    if page_size not in (10, 25, 50, 100):
+        raise ETLError("Choose 10, 25, 50, or 100 rows per page.", code="invalid_page")
+    return JsonResponse(etl_service.dataset_rows(request.user, dataset_id, page, page_size))
+
+
 def query_parameters(request, allowed):
     if set(request.GET) - set(allowed) or any(len(request.GET.getlist(key)) != 1 for key in request.GET):
         raise ETLError("Send only the supported query parameters, once each.")
@@ -67,6 +78,30 @@ def dataset_detail(request, dataset_id):
 
 
 @endpoint(["GET", "POST"])
+def pipelines(request):
+    if request.method == "GET":
+        query_parameters(request, ("page",))
+        return JsonResponse(etl_service.list_pipelines(request.user, positive_integer(request, "page", 1)))
+    payload, error = _read_json_object(request, {"name", "datasetId", "steps", "schemaVersion", "updatedAt"})
+    if error is not None:
+        return error
+    return JsonResponse({"pipeline": etl_service.create_pipeline(request.user, payload)}, status=201)
+
+
+@endpoint(["GET", "PUT", "DELETE"])
+def pipeline_detail(request, pipeline_id):
+    if request.method == "GET":
+        pipeline = etl_service.owned_pipeline(request.user, pipeline_id)
+        return JsonResponse({"pipeline": etl_service.public_pipeline(pipeline, include_config=True)})
+    if request.method == "PUT":
+        payload, error = _read_json_object(request, {"name", "datasetId", "steps", "schemaVersion", "updatedAt"})
+        if error is not None:
+            return error
+        return JsonResponse({"pipeline": etl_service.update_pipeline(request.user, pipeline_id, payload)})
+    return JsonResponse(etl_service.delete_pipeline(request.user, pipeline_id))
+
+
+@endpoint(["GET", "POST"])
 def runs(request):
     if request.method == "GET":
         query_parameters(request, ("page", "status"))
@@ -80,7 +115,29 @@ def runs(request):
 @endpoint(["GET"])
 def run_detail(request, run_id):
     run = etl_service.owned_run(request.user, run_id)
-    return JsonResponse({"run": {**etl_service.public_run(run), "configuration": run.configuration}})
+    return JsonResponse({
+        "run": {
+            **etl_service.public_run(run),
+            "configuration": run.configuration,
+            "sources_meta": etl_service.run_sources_meta(run),
+        }
+    })
+
+
+@endpoint(["GET"])
+def source_rows(request, run_id):
+    query_parameters(request, ("page", "page_size", "dataset_id"))
+    page = positive_integer(request, "page", 1)
+    page_size = positive_integer(request, "page_size", 25)
+    if page_size not in (10, 25, 50, 100):
+        raise ETLError("Choose 10, 25, 50, or 100 rows per page.", code="invalid_page")
+    dataset_id = None
+    if "dataset_id" in request.GET:
+        try:
+            dataset_id = str(uuid.UUID(request.GET["dataset_id"]))
+        except ValueError as error:
+            raise ETLError("Source dataset not found for this run.", code="dataset_not_found", status=404) from error
+    return JsonResponse(etl_service.source_rows(request.user, run_id, page, page_size, dataset_id=dataset_id))
 
 
 @endpoint(["DELETE"])
@@ -101,12 +158,11 @@ def rows(request, run_id):
 def download(request, run_id):
     if set(request.GET) - {"format"} or len(request.GET.getlist("format")) > 1:
         raise ETLError("Send a single format query parameter.")
-    file_format = request.GET.get("format", "parquet")
+    file_format = request.GET.get("format", "csv")
     if file_format not in FORMATS:
         raise ETLError("Unsupported export format.")
     content = etl_service.download_result(request.user, run_id, file_format)
-    types = {"parquet": "application/vnd.apache.parquet", "csv": "text/csv; charset=utf-8", "tsv": "text/tab-separated-values; charset=utf-8",
-             "json": "application/json; charset=utf-8", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+    types = {"csv": "text/csv; charset=utf-8", "tsv": "text/tab-separated-values; charset=utf-8"}
     response = HttpResponse(content, content_type=types[file_format])
     response["Content-Disposition"] = f'attachment; filename="result-{run_id}.{file_format}"'
     response["X-Content-Type-Options"] = "nosniff"
