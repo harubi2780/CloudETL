@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import datasetsApi from '../api/datasets';
 import etlApi from '../api/etl';
 import DataTable from '../components/etl/DataTable';
@@ -24,6 +24,7 @@ function pipelineSelectionError(datasets) {
 }
 
 function fileSize(bytes) {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes)) return '—';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -385,9 +386,45 @@ export default function DatasetsPage({ onSessionExpired }) {
 
   const queuedCount = queue.filter((item) => item.status === 'queued').length;
   const selectedSources = Object.values(pipelineSources);
-  const uploadedSources = Array.from(new Map(queue.filter((item) => item.status === 'uploaded' && item.dataset && canProcess(item.dataset))
-    .map((item) => [item.dataset.id, item.dataset])).values());
+  const uploadedSources = useMemo(() => Array.from(new Map(
+    queue.filter((item) => item.status === 'uploaded' && item.dataset && canProcess(item.dataset))
+      .map((item) => [String(item.dataset.id), item.dataset]),
+  ).values()), [queue]);
   const data = listing.data;
+  const reviewableDatasets = useMemo(() => {
+    const byId = new Map();
+    for (const item of [...uploadedSources, ...(data?.datasets || [])]) {
+      if (item && canProcess(item)) {
+        byId.set(String(item.id), item);
+      }
+    }
+    if (reviewTarget && canProcess(reviewTarget) && !byId.has(String(reviewTarget.id))) {
+      byId.set(String(reviewTarget.id), reviewTarget);
+    }
+    return Array.from(byId.values());
+  }, [reviewTarget, uploadedSources, data]);
+  const activeReviewTarget = useMemo(
+    () => (reviewTarget
+      ? reviewableDatasets.find((item) => String(item.id) === String(reviewTarget.id)) || reviewTarget
+      : null),
+    [reviewableDatasets, reviewTarget],
+  );
+  const filenameCounts = useMemo(() => {
+    const counts = new Map();
+    for (const item of reviewableDatasets) {
+      counts.set(item.filename, (counts.get(item.filename) || 0) + 1);
+    }
+    return counts;
+  }, [reviewableDatasets]);
+
+  function selectReviewDataset(datasetId) {
+    const next = reviewableDatasets.find((item) => String(item.id) === String(datasetId));
+    if (!next || String(next.id) === String(reviewTarget?.id)) return;
+    setReviewState({ status: 'loading', data: null, error: '' });
+    setReviewTarget(next);
+    setReviewPage(1);
+    setReviewAttempt((value) => value + 1);
+  }
 
   return (
     <>
@@ -461,11 +498,33 @@ export default function DatasetsPage({ onSessionExpired }) {
         </form>
       </section>
 
-      {reviewTarget && (
+      {activeReviewTarget && (
         <section id="dataset-review-panel" className="datasets-review" aria-labelledby="dataset-review-title">
           <div className="datasets-review-header">
-            <h2 id="dataset-review-title">Data review: {reviewTarget.filename}</h2>
+            <h2 id="dataset-review-title">Data review: {activeReviewTarget.filename}</h2>
             <div className="datasets-review-controls">
+              {reviewableDatasets.length > 1 && (
+                <label htmlFor="dataset-review-file-select">
+                  File{' '}
+                  <select
+                    id="dataset-review-file-select"
+                    value={String(activeReviewTarget.id)}
+                    disabled={uploading || managementBusy || Boolean(management)}
+                    onChange={(event) => selectReviewDataset(event.target.value)}
+                  >
+                    {reviewableDatasets.map((item) => {
+                      const hasSize = typeof item.size_bytes === 'number' && Number.isFinite(item.size_bytes);
+                      return (
+                        <option key={String(item.id)} value={String(item.id)}>
+                          {filenameCounts.get(item.filename) > 1
+                            ? `${item.filename} (${hasSize ? `${fileSize(item.size_bytes)} · ` : ''}${String(item.id).slice(0, 8)})`
+                            : item.filename}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              )}
               <label htmlFor="dataset-review-page-size">
                 Rows per page{' '}
                 <select id="dataset-review-page-size" value={reviewPageSize}
@@ -498,9 +557,9 @@ export default function DatasetsPage({ onSessionExpired }) {
               <DataTable
                 columns={reviewState.data.columns}
                 rows={reviewState.data.rows}
-                caption={`Dataset rows for ${reviewTarget.filename} · page ${reviewState.data.page}`}
+                caption={`Dataset rows for ${activeReviewTarget.filename} · page ${reviewState.data.page}`}
                 rowOffset={(reviewState.data.page - 1) * reviewState.data.page_size}
-                selectionKey={`dataset:${reviewTarget.id}:${reviewState.data.page}:${reviewState.data.page_size}`}
+                selectionKey={`dataset:${activeReviewTarget.id}:${reviewState.data.page}:${reviewState.data.page_size}`}
               />
               <Pagination
                 page={reviewState.data.page}

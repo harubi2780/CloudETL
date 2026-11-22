@@ -29,11 +29,15 @@ export default function DashboardLayout({ user, page, onSignOut, children }) {
         <Link className="brand" to="/" aria-label="CloudETL home">CloudETL</Link>
         <p className="nav-caption">Workspace</p>
         <nav className="dashboard-navigation" aria-label="Workspace">
-          {workspacePages.map((item) => (
-            <Link key={item.path} to={item.path} aria-current={page.path === item.path ? 'page' : undefined}>
-              {item.label}
-            </Link>
-          ))}
+          {workspacePages.filter((item) => !item.hiddenInNav).map((item) => {
+            const isCurrent = page.path === item.path
+              || (item.path === '/dashboard/runs' && page.path === '/dashboard/results');
+            return (
+              <Link key={item.path} to={item.path} aria-current={isCurrent ? 'page' : undefined}>
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
         <div className="dashboard-account">
           <strong>{user.username}</strong>

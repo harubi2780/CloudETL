@@ -16,6 +16,22 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let stepSequence = 0;
 const withId = (step) => ({ ...step, id: `step-${++stepSequence}` });
 
+function reorderList(items, fromIndex, toIndex) {
+  if (
+    !Array.isArray(items)
+    || !Number.isInteger(fromIndex) || !Number.isInteger(toIndex)
+    || fromIndex < 0 || fromIndex >= items.length
+    || toIndex < 0 || toIndex >= items.length
+    || fromIndex === toIndex
+  ) {
+    return items;
+  }
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
 export default function PipelinesPage({ search = '', user = null, onSessionExpired }) {
   const userId = user?.id ?? null;
   const [caps, setCaps] = useState(null);
@@ -50,8 +66,10 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
   const [selectedCell, setSelectedCell] = useState(null);
   const pickerHeading = useRef(null);
   const pickerTrigger = useRef(null);
+  const sourceLibraryRef = useRef(null);
   const savedHeading = useRef(null);
   const savedTrigger = useRef(null);
+  const savedDrawerRef = useRef(null);
   const submitLock = useRef(false);
   const previewRequests = useRef(new Map());
   const previewVersions = useRef(new Map());
@@ -200,6 +218,10 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
   }, [dirty]);
 
   const schemas = useMemo(() => schemasFor(primaryId, steps, sources), [primaryId, steps, sources]);
+  const sourcesById = useMemo(
+    () => Object.fromEntries(sources.map((source) => [source.id, source])),
+    [sources],
+  );
   const previewSource = sources.find((source) => source.id === previewId) || sources[0] || null;
   const effectiveCompareSource = sources.find((source) => source.id === compareId && source.id !== previewSource?.id)
     || sources.find((source) => source.id !== previewSource?.id) || null;
@@ -245,8 +267,79 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
     });
   }, [boot.status, userId, name, sources, primaryId, previewSource, effectiveCompareId, isSplitActive, steps, savedPipelineId, dirty]);
 
+  const dismissPicker = useCallback(() => {
+    setSourcePicker(false);
+    setLibrarySelected({});
+    setNotice('');
+  }, []);
+
+  const closePicker = useCallback(() => {
+    dismissPicker();
+    pickerTrigger.current?.focus();
+  }, [dismissPicker]);
+
+  const dismissSavedDrawer = useCallback(() => {
+    setSavedDrawer(false);
+  }, []);
+
+  const closeSavedDrawer = useCallback(() => {
+    dismissSavedDrawer();
+    savedTrigger.current?.focus();
+  }, [dismissSavedDrawer]);
+
   useEffect(() => { if (sourcePicker) pickerHeading.current?.focus(); }, [sourcePicker]);
   useEffect(() => { if (savedDrawer) savedHeading.current?.focus(); }, [savedDrawer]);
+
+  useEffect(() => {
+    if (!sourcePicker) return undefined;
+    const handlePointerOutside = (event) => {
+      const target = event.target;
+      if (!target || !target.isConnected) return;
+      if (sourceLibraryRef.current?.contains(target)) return;
+      if (pickerTrigger.current?.contains(target)) return;
+      if (target.closest?.('[data-source-picker-trigger="true"]')) return;
+      dismissPicker();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePicker();
+      }
+    };
+    document.addEventListener('mousedown', handlePointerOutside);
+    document.addEventListener('click', handlePointerOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerOutside);
+      document.removeEventListener('click', handlePointerOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [sourcePicker, dismissPicker, closePicker]);
+
+  useEffect(() => {
+    if (!savedDrawer) return undefined;
+    const handlePointerOutside = (event) => {
+      const target = event.target;
+      if (!target || !target.isConnected) return;
+      if (savedDrawerRef.current?.contains(target)) return;
+      if (savedTrigger.current?.contains(target)) return;
+      dismissSavedDrawer();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSavedDrawer();
+      }
+    };
+    document.addEventListener('mousedown', handlePointerOutside);
+    document.addEventListener('click', handlePointerOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerOutside);
+      document.removeEventListener('click', handlePointerOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [savedDrawer, dismissSavedDrawer, closeSavedDrawer]);
 
   function selectSource(id) {
     if (isSplitActive && id === effectiveCompareId) {
@@ -269,14 +362,6 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
     } else if (sourceId === activeTargetId) {
       setSelectedCell(null);
     }
-  }
-
-  function closePicker() {
-    setSourcePicker(false); setLibrarySelected({}); pickerTrigger.current?.focus();
-  }
-
-  function closeSavedDrawer() {
-    setSavedDrawer(false); savedTrigger.current?.focus();
   }
 
   function addSourcesBatch(datasetsToAdd) {
@@ -326,16 +411,35 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
     });
   }
 
+  function reorderSources(fromIndex, toIndex) {
+    if (
+      !Number.isInteger(fromIndex) || !Number.isInteger(toIndex)
+      || fromIndex < 0 || fromIndex >= sources.length
+      || toIndex < 0 || toIndex >= sources.length
+      || fromIndex === toIndex
+    ) return;
+    change(() => setSources((items) => reorderList(items, fromIndex, toIndex)));
+  }
+
   function removeSource(id) {
     previewRequests.current.get(id)?.abort();
+    previewRequests.current.delete(id);
     const remaining = sources.filter((source) => source.id !== id);
+    const nextPrimaryId = primaryId === id ? (remaining[0]?.id || '') : primaryId;
+    const nextPreviewId = previewId === id ? (remaining[0]?.id || '') : previewId;
+    const nextCompareId = (compareId === id || compareId === nextPreviewId)
+      ? (remaining.find((item) => item.id !== nextPreviewId)?.id || '')
+      : compareId;
+    const nextFocusId = focusId === id ? nextPreviewId : focusId;
     change(() => setSources(remaining));
-    if (primaryId === id) setPrimaryId(remaining[0]?.id || '');
-    if (previewId === id) {
-      setPreviewId(remaining[0]?.id || '');
-      setFocusId(remaining[0]?.id || '');
+    setPrimaryId(nextPrimaryId);
+    setPreviewId(nextPreviewId);
+    setCompareId(nextCompareId);
+    setFocusId(nextFocusId);
+    if (previewId === id || focusId === id) {
+      setSelectedColumns([]);
+      setSelectedCell(null);
     }
-    if (compareId === id) setCompareId(remaining.find((item) => item.id !== previewId)?.id || '');
     if (remaining.length < 2) setSplitView(false);
   }
 
@@ -444,12 +548,29 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
     }
   }
 
+  function reorderStep(fromIndex, toIndex) {
+    if (
+      !Number.isInteger(fromIndex) || !Number.isInteger(toIndex)
+      || fromIndex < 0 || fromIndex >= steps.length
+      || toIndex < 0 || toIndex >= steps.length
+      || fromIndex === toIndex
+    ) return;
+    change(() => setSteps((items) => reorderList(items, fromIndex, toIndex)));
+  }
+
   function move(index, delta) {
-    change(() => setSteps((items) => {
-      const result = [...items];
-      [result[index], result[index + delta]] = [result[index + delta], result[index]];
-      return result;
-    }));
+    reorderStep(index, index + delta);
+  }
+
+  function removeStep(id) {
+    const removedIndex = steps.findIndex((step) => step.id === id);
+    if (removedIndex === -1) return;
+    const remaining = steps.filter((step) => step.id !== id);
+    change(() => setSteps(remaining));
+    if (activeId === id) {
+      const nextActive = remaining[removedIndex] || remaining[removedIndex - 1] || null;
+      setActiveId(nextActive?.id || '');
+    }
   }
 
   function resetDraft() {
@@ -545,27 +666,29 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
         <header className="workbook-titlebar">
           <label className="workbook-name">Pipeline name<input value={name} maxLength={120} onChange={(event) => change(() => setName(event.target.value))} /></label>
           <span className="workbook-draft">{saveNotice || (dirty ? 'Draft changes' : savedPipelineId ? 'Saved pipeline' : 'Pipeline workspace')}</span>
-          <button ref={savedTrigger} type="button" className="workbook-source-button" aria-expanded={savedDrawer} aria-controls="saved-pipelines" onClick={() => { setSavedDrawer(!savedDrawer); setSourcePicker(false); }}>Saved</button>
+          <button ref={savedTrigger} type="button" className="workbook-source-button" aria-expanded={savedDrawer} aria-controls="saved-pipelines" onClick={() => { if (savedDrawer) closeSavedDrawer(); else { dismissPicker(); setSavedDrawer(true); } }}>Saved</button>
           <button type="button" className="workbook-save-button" disabled={busy || saveBusy || !primaryId || !name.trim()} onClick={() => savePipeline(false)}>
             {saveBusy ? 'Saving…' : savedPipelineId ? 'Save' : 'Save pipeline'}
           </button>
           {savedPipelineId && <button type="button" className="workbook-save-button" disabled={busy || saveBusy || !primaryId || !name.trim()} onClick={() => savePipeline(true)}>Save as new</button>}
           <button type="button" className="workbook-save-button" disabled={busy || saveBusy || !hasDraft} onClick={resetDraft}>New draft</button>
-          <button ref={pickerTrigger} type="button" className="workbook-source-button" aria-expanded={sourcePicker} aria-controls="source-library" onClick={() => { setSourcePicker(!sourcePicker); setSavedDrawer(false); }}>Sources ({sources.length})</button>
-          <Link to="/dashboard/datasets" className="workbook-upload-link">Upload files</Link>
+          <button ref={pickerTrigger} type="button" className="workbook-source-button" data-source-picker-trigger="true" aria-expanded={sourcePicker} aria-controls="source-library" onClick={() => { if (sourcePicker) closePicker(); else { dismissSavedDrawer(); setSourcePicker(true); } }}>Sources ({sources.length})</button>
+          <Link to="/dashboard/datasets" className="button button-secondary workbook-upload-link">Upload files</Link>
           <button className="button button-primary workbook-run" type="submit" aria-describedby="workbook-validation" disabled={busy || saveBusy || validation.length > 0}>{busy && <Spinner />}{busy ? 'Submitting pipeline…' : 'Run pipeline'}</button>
         </header>
         <WorkbookToolbar capabilities={caps} onAddStep={addStep} sourceCount={sources.length} selectedColumns={selectedColumns}
           hasDateColumns={hasDateColumns} columns={activeColumns}
+          onOpenSources={() => { dismissSavedDrawer(); setSourcePicker(true); }}
           disabled={!sources.length || sources.some((source) => source.status !== 'ready') || steps.length >= caps.limits.maxSteps} />
         <div className="workbook-body">
           <div className="workbook-center">
             {sources.length > 0 && (
               <SourceTabs sources={sources} activeId={activeTargetId} primaryId={primaryId} combinedIds={combinedIds}
                 splitView={isSplitActive} canSplit={sources.length >= 2} onToggleSplit={() => setSplitView((value) => !value)}
-                onSelect={selectSource} onAdd={() => setSourcePicker(true)} />
+                onSelect={selectSource} onReorder={reorderSources} disabled={busy}
+                onAdd={() => { dismissSavedDrawer(); setSourcePicker(true); }} />
             )}
-            {savedDrawer && <section id="saved-pipelines" className="workbook-library" aria-label="Saved pipelines" onKeyDown={(event) => { if (event.key === 'Escape') closeSavedDrawer(); }}>
+            {savedDrawer && <section ref={savedDrawerRef} id="saved-pipelines" className="workbook-library" aria-label="Saved pipelines">
               <div className="workbook-panel-heading"><h2 ref={savedHeading} tabIndex={-1}>Saved pipelines</h2><button type="button" onClick={closeSavedDrawer}>Close saved pipelines</button></div>
               {savedList.status === 'loading' && <p role="status"><Spinner /> Loading saved pipelines…</p>}
               {savedList.status === 'error' && <><p role="alert">{savedList.error}</p><button type="button" onClick={() => setSavedAttempt((value) => value + 1)}>Retry saved pipelines</button></>}
@@ -581,7 +704,7 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
                 <nav className="workbook-library-pages" aria-label="Saved pipeline pages"><button type="button" disabled={savedPage <= 1} onClick={() => setSavedPage((page) => page - 1)}>Previous pipelines</button><span>Page {savedList.data.page} of {savedList.data.total_pages}</span><button type="button" disabled={savedPage >= savedList.data.total_pages} onClick={() => setSavedPage((page) => page + 1)}>Next pipelines</button></nav>
               </>}
             </section>}
-            {sourcePicker && <section id="source-library" className="workbook-library" aria-label="Source library" onKeyDown={(event) => { if (event.key === 'Escape') closePicker(); }}>
+            {sourcePicker && <section ref={sourceLibraryRef} id="source-library" className="workbook-library" aria-label="Source library">
               <div className="workbook-panel-heading"><h2 ref={pickerHeading} tabIndex={-1}>Add saved datasets</h2><button type="button" onClick={closePicker}>Close source library</button></div>
               <p className="workbook-hint">CSV/TSV · Loaded {sources.length}/{caps.limits.maxSources} files · {(sources.reduce((sum, s) => sum + s.size_bytes, 0) / 1048576).toFixed(2)}/{(caps.limits.maxCombinedInputBytes / 1048576).toFixed(0)} MiB combined.</p>
               {notice && <p className="workbook-step-errors" role="alert">{notice}</p>}
@@ -618,13 +741,13 @@ export default function PipelinesPage({ search = '', user = null, onSessionExpir
                     {renderSheetPane(effectiveCompareSource, 'right')}
                   </div>
                 ) : renderSheetPane(previewSource, 'single')
-              ) : <div className="workbook-empty"><h2>Start with your data</h2><p>Add a saved file to preview its columns and first ten rows.</p><button type="button" onClick={() => setSourcePicker(true)}>Add source</button><Link to="/dashboard/datasets">Upload new files</Link></div>}
+              ) : <div className="workbook-empty"><h2>Start with your data</h2><p>Add a saved file to preview its columns and first ten rows.</p><button type="button" data-source-picker-trigger="true" onClick={() => { dismissSavedDrawer(); setSourcePicker(true); }}>Add source</button><Link to="/dashboard/datasets" className="button button-secondary">Upload new files</Link></div>}
             </div>
           </div>
-          <AppliedStepsPanel steps={steps} activeId={activeId} schemas={schemas} sources={sources} primaryId={primaryId} capabilities={caps} validation={validation}
-            onSelect={setActiveId} onPreviewSource={selectSource} onMove={move} onSourceChange={changeStepSource}
+          <AppliedStepsPanel steps={steps} activeId={activeId} schemas={schemas} sources={sources} sourcesById={sourcesById} primaryId={primaryId} capabilities={caps} validation={validation}
+            disabled={busy} onSelect={setActiveId} onPreviewSource={selectSource} onMove={move} onReorder={reorderStep} onSourceChange={changeStepSource}
             onToggle={(id) => change(() => setSteps((items) => items.map((step) => step.id === id ? { ...step, enabled: !step.enabled } : step)))}
-            onRemove={(id) => change(() => { setSteps((items) => items.filter((step) => step.id !== id)); if (activeId === id) setActiveId(''); })}
+            onRemove={removeStep}
             onChange={(config) => change(() => setSteps((items) => items.map((step) => step.id === activeId ? { ...step, config } : step)))} />
         </div>
         <footer className="workbook-statusbar">

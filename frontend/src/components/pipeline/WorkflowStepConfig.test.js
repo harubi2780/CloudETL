@@ -200,3 +200,98 @@ test('merge columns configures selected columns, new name, and separator', async
   fireEvent.change(screen.getByLabelText('Separator'), { target: { value: ' - ' } });
   expect(configuration()).toEqual({ columns: ['order_id', 'city'], newColumnName: 'order_city', separator: ' - ' });
 });
+
+test('join with a single loaded source disables file selection and instructs the user to add another file', () => {
+  render(<Harness type="join" config={{ datasetId: '', on: '', how: 'left' }} sources={[sources[0]]} />);
+  expect(screen.getByLabelText('File to join')).toBeDisabled();
+  expect(screen.getByText('Add another source file to select a file to join.')).toHaveAttribute('role', 'status');
+});
+
+test('concat append order supports HTML5 drag-and-drop reordering', () => {
+  render(<Harness type="concat" config={{ datasetIds: ['customers', 'next'] }} />);
+  const orderList = screen.getByRole('list', { name: 'Append order' });
+  const items = within(orderList).getAllByRole('listitem');
+  expect(items[0]).toHaveAttribute('draggable', 'true');
+  fireEvent.dragStart(items[0], { dataTransfer: { setData: jest.fn(), effectAllowed: 'move' } });
+  fireEvent.dragOver(items[1], { dataTransfer: { dropEffect: 'move' } });
+  fireEvent.drop(items[1], { dataTransfer: { getData: () => 'customers' } });
+  fireEvent.dragEnd(items[0]);
+  expect(configuration()).toEqual({ datasetIds: ['next', 'customers'] });
+});
+
+test('datetime filter opens calendar dialog for after, before, and equals while rejecting arbitrary text', async () => {
+  const typedColumns = [{ name: 'order_date', type: 'datetime' }];
+  render(<Harness type="filter_rows" columns={typedColumns}
+    config={{ conditions: [{ column: 'order_date', operator: 'after', value: '2026-06-01' }] }} />);
+  const valueInput = screen.getByLabelText('Rule 1 comparison value');
+  await userEvent.click(valueInput);
+  const dialog = screen.getByRole('dialog', { name: 'Choose date and time' });
+  await userEvent.click(within(dialog).getByRole('button', { name: '12' }));
+  expect(configuration().conditions[0].value).toBe('2026-06-12');
+
+  await userEvent.selectOptions(screen.getByLabelText('Rule 1 comparison'), 'equals');
+  await userEvent.type(screen.getByLabelText('Rule 1 comparison value'), 'bad');
+  expect(configuration().conditions[0].value).toBe('2026-06-12');
+  expect(screen.getByText('Use the calendar or enter YYYY-MM-DD or YYYY-MM-DD HH:mm:ss.')).toHaveAttribute('role', 'status');
+});
+
+test('column checks provide Select all, Clear, and search filter when more than 6 columns exist', async () => {
+  const manyCols = Array.from({ length: 8 }, (_, idx) => ({ name: `col_${idx + 1}`, type: 'str' }));
+  render(<Harness type="select_columns" columns={manyCols} config={{ selectedColumns: [] }} />);
+  const searchInput = screen.getByLabelText('Filter Columns to keep');
+  await userEvent.type(searchInput, 'col_7');
+  expect(screen.getByLabelText('col_7')).toBeInTheDocument();
+  expect(screen.queryByLabelText('col_1')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
+  expect(configuration().selectedColumns).toEqual(['col_7']);
+  await userEvent.clear(searchInput);
+  await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
+  expect(configuration().selectedColumns).toHaveLength(8);
+  await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+  expect(configuration().selectedColumns).toEqual([]);
+});
+
+test('adding multiple drop_duplicates rules creates independent rule objects', async () => {
+  render(<Harness type="drop_duplicates" config={{ rules: [{ allColumns: true, columns: [], keep: 'first' }] }} />);
+  await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
+  await userEvent.selectOptions(screen.getByLabelText('Rule 2 duplicate row to keep'), 'last');
+  await userEvent.click(screen.getByLabelText('Rule 2: compare all columns'));
+  expect(configuration().rules[0]).toEqual({ allColumns: true, columns: [], keep: 'first' });
+  expect(configuration().rules[1]).toEqual({ allColumns: false, columns: ['order_id'], keep: 'last' });
+});
+
+test('column checks disables Select all when search matches zero columns', async () => {
+  const manyCols = Array.from({ length: 8 }, (_, idx) => ({ name: `col_${idx + 1}`, type: 'str' }));
+  render(<Harness type="select_columns" columns={manyCols} config={{ selectedColumns: [] }} />);
+  const searchInput = screen.getByLabelText('Filter Columns to keep');
+
+  await userEvent.type(searchInput, 'nonexistent');
+  expect(screen.getByText('No columns match “nonexistent”.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Select all' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Clear' })).toBeDisabled();
+
+  await userEvent.clear(searchInput);
+  expect(screen.getByRole('button', { name: 'Select all' })).toBeEnabled();
+});
+
+test('removing rule 1 in filter_rows does not leak datetime rejection hint onto shifted rule 2', async () => {
+  const typedColumns = [{ name: 'order_date', type: 'datetime' }];
+  render(
+    <Harness
+      type="filter_rows"
+      columns={typedColumns}
+      config={{
+        conditions: [
+          { column: 'order_date', operator: 'after', value: '' },
+          { column: 'order_date', operator: 'before', value: '' },
+        ],
+      }}
+    />,
+  );
+
+  await userEvent.type(screen.getByLabelText('Rule 1 comparison value'), 'bad');
+  expect(screen.getByText('Use the calendar or enter YYYY-MM-DD or YYYY-MM-DD HH:mm:ss.')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Remove rule 1' }));
+  expect(screen.queryByText('Use the calendar or enter YYYY-MM-DD or YYYY-MM-DD HH:mm:ss.')).not.toBeInTheDocument();
+});

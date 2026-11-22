@@ -509,13 +509,13 @@ test('preserves draft sources and steps across navigation, isolates per user, an
   view.unmount();
 
   // Different user does not see userA's draft
-  const otherView = render(<PipelinesPage search="" user={userB} />);
+  const { unmount: unmountOther } = render(<PipelinesPage search="" user={userB} />);
   await screen.findByRole('button', { name: 'Sources (0)' });
   expect(screen.getByLabelText('Pipeline name')).toHaveValue('Data cleaning pipeline');
-  otherView.unmount();
+  unmountOther();
 
   // Returning as userA with empty search restores sources, name, and steps
-  const restored = render(<PipelinesPage search="" user={userA} />);
+  const { unmount: unmountRestored } = render(<PipelinesPage search="" user={userA} />);
   await screen.findByText(/First 10 of 12 rows · Original data/);
   expect(screen.getByLabelText('Pipeline name')).toHaveValue('Preserved draft');
   expect(screen.getByRole('button', { name: /^1\s*Clean text/ })).toBeInTheDocument();
@@ -524,19 +524,19 @@ test('preserves draft sources and steps across navigation, isolates per user, an
   // Submitting clears the draft
   fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
   await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
-  restored.unmount();
+  unmountRestored();
 
-  const afterSubmit = render(<PipelinesPage search="" user={userA} />);
+  const { unmount: unmountAfterSubmit } = render(<PipelinesPage search="" user={userA} />);
   await screen.findByRole('button', { name: 'Sources (0)' });
   expect(screen.getByLabelText('Pipeline name')).toHaveValue('Data cleaning pipeline');
 
   // New draft button also clears an active draft
-  afterSubmit.unmount();
-  const loadedAgain = render(<PipelinesPage search={sourceSearch} user={userA} />);
+  unmountAfterSubmit();
+  const { unmount: unmountLoadedAgain } = render(<PipelinesPage search={sourceSearch} user={userA} />);
   await screen.findByText(/First 10 of 12 rows · Original data/);
   fireEvent.click(screen.getByRole('button', { name: 'New draft' }));
   expect(screen.getByRole('button', { name: 'Sources (0)' })).toBeInTheDocument();
-  loadedAgain.unmount();
+  unmountLoadedAgain();
   render(<PipelinesPage search="" user={userA} />);
   await screen.findByRole('button', { name: 'Sources (0)' });
 });
@@ -633,4 +633,184 @@ test('R2–R4 in builder: conditional date formatting, cast_type restrictions, a
   fireEvent.change(screen.getByLabelText('Rule 1 target type'), { target: { value: 'str' } });
   fireEvent.click(screen.getByRole('button', { name: 'Clean', exact: true }));
   expect(screen.queryByRole('button', { name: 'Add Format dates step' })).not.toBeInTheDocument();
+});
+
+test('dragging and dropping applied steps resolves column dependency errors and submits updated order', async () => {
+  await ready();
+  addOperation('select_columns');
+  addOperation('string_transform');
+  fireEvent.change(screen.getByLabelText('Rule 1 column'), { target: { value: 'city' } });
+  selectStep(1, 'Select columns');
+  fireEvent.click(within(screen.getByRole('group', { name: 'Columns to keep' })).getByLabelText('city'));
+  expect(screen.getByText('Step 2: a referenced column is missing or was removed earlier.')).toBeInTheDocument();
+  expect(screen.getByLabelText('1 validation error')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeDisabled();
+
+  const inspector = screen.getByRole('complementary', { name: 'Pipeline settings' });
+  const rows = within(inspector).getAllByRole('listitem');
+  fireEvent.dragStart(rows[1], { dataTransfer: { setData: jest.fn(), effectAllowed: 'move' } });
+  fireEvent.dragOver(rows[0], { dataTransfer: { dropEffect: 'move' } });
+  fireEvent.drop(rows[0], { dataTransfer: { getData: () => 'step-2' } });
+  fireEvent.dragEnd(rows[0]);
+
+  expect(screen.queryByText('Step 2: a referenced column is missing or was removed earlier.')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('1 validation error')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Run pipeline' }));
+  await waitFor(() => expect(etlApi.submit).toHaveBeenCalledTimes(1));
+  expect(etlApi.submit.mock.calls[0][0].steps.map((step) => step.type)).toEqual(['string_transform', 'select_columns']);
+});
+
+test('dragging and dropping source tabs persists reordered sourceIds in draft storage while keeping primaryId independent', async () => {
+  const userA = { id: 777, username: 'reorder-user' };
+  const view = render(<PipelinesPage search={`?datasets=${sourceId},${customerId}`} user={userA} />);
+  await screen.findByText(/First 10 of 12 rows · Original data/);
+
+  const tabs = screen.getAllByRole('tab');
+  expect(tabs[0]).toHaveTextContent(/orders\.csv/);
+  expect(tabs[1]).toHaveTextContent(/customers\.tsv/);
+
+  fireEvent.dragStart(tabs[1], { dataTransfer: { setData: jest.fn(), effectAllowed: 'move' } });
+  fireEvent.dragOver(tabs[0], { dataTransfer: { dropEffect: 'move' } });
+  fireEvent.drop(tabs[0], { dataTransfer: { getData: () => customerId } });
+  fireEvent.dragEnd(tabs[0]);
+
+  const reorderedTabs = screen.getAllByRole('tab');
+  expect(reorderedTabs[0]).toHaveTextContent(/customers\.tsv/);
+  expect(reorderedTabs[1]).toHaveTextContent(/orders\.csv/);
+  expect(reorderedTabs[1]).toHaveAccessibleName(/Starting dataset/);
+
+  view.unmount();
+  render(<PipelinesPage search="" user={userA} />);
+  await screen.findByText(/First 10 of 12 rows · Original data/);
+  const restoredTabs = screen.getAllByRole('tab');
+  expect(restoredTabs[0]).toHaveTextContent(/customers\.tsv/);
+  expect(restoredTabs[1]).toHaveTextContent(/orders\.csv/);
+});
+
+test('clicking outside source library or saved drawer dismisses it without stealing focus or disrupting pipeline state', async () => {
+  await ready();
+  fireEvent.change(screen.getByLabelText('Pipeline name'), { target: { value: 'Keep edits' } });
+  addOperation('string_transform');
+
+  openLibrary();
+  const libraryPanel = screen.getByRole('region', { name: 'Source library' });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select source customers.tsv' }));
+
+  // Clicking inside source library keeps it open
+  fireEvent.mouseDown(libraryPanel);
+  fireEvent.click(libraryPanel);
+  expect(screen.getByRole('region', { name: 'Source library' })).toBeInTheDocument();
+
+  // Clicking + Add source trigger does not falsely dismiss
+  const addSourceTabBtn = screen.getByRole('button', { name: 'Add source sheet' });
+  fireEvent.mouseDown(addSourceTabBtn);
+  fireEvent.click(addSourceTabBtn);
+  expect(screen.getByRole('region', { name: 'Source library' })).toBeInTheDocument();
+
+  // Clicking outside dismisses without stealing focus from the clicked element
+  const nameInput = screen.getByLabelText('Pipeline name');
+  nameInput.focus();
+  fireEvent.mouseDown(nameInput);
+  fireEvent.click(nameInput);
+  expect(screen.queryByRole('region', { name: 'Source library' })).not.toBeInTheDocument();
+  expect(nameInput).toHaveFocus();
+  expect(nameInput).toHaveValue('Keep edits');
+  expect(screen.getByLabelText('Enable step 1')).toBeChecked();
+
+  // Re-opening shows librarySelected was cleared
+  openLibrary();
+  expect(screen.getByRole('checkbox', { name: 'Select source customers.tsv' })).not.toBeChecked();
+
+  // Escape works even when focus moved outside the source library
+  nameInput.focus();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('region', { name: 'Source library' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Sources (1)' })).toHaveFocus();
+
+  // Saved pipelines drawer also dismisses on outside click
+  fireEvent.click(screen.getByRole('button', { name: 'Saved', exact: true }));
+  expect(await screen.findByRole('region', { name: 'Saved pipelines' })).toBeInTheDocument();
+  fireEvent.mouseDown(nameInput);
+  fireEvent.click(nameInput);
+  expect(screen.queryByRole('region', { name: 'Saved pipelines' })).not.toBeInTheDocument();
+});
+
+test('removing active middle step selects adjacent step and removing split-view right source cleanly resets view', async () => {
+  await ready(`?datasets=${sourceId},${customerId}`);
+  addOperation('string_transform');
+  addOperation('replace_value');
+  selectStep(1, 'Clean text');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove step 1' }));
+  expect(screen.getByRole('heading', { name: 'Configure step 1' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Replace in column')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Compare side-by-side' }));
+  const comparison = screen.getByLabelText('Side-by-side source comparison');
+  fireEvent.click(within(comparison).getByRole('button', { name: 'Remove source customers.tsv' }));
+  expect(screen.queryByLabelText('Side-by-side source comparison')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Source preview: orders.csv' })).toBeInTheDocument();
+});
+
+test('cross-widget DnD between source tabs and concat append order does not collide', async () => {
+  await ready(`?datasets=${sourceId},${customerId},${thirdId}`);
+  addOperation('concat');
+
+  const transferStore = {};
+  const makeTransfer = () => ({
+    effectAllowed: 'move',
+    dropEffect: 'move',
+    setData: (type, val) => { transferStore[type] = val; },
+    getData: (type) => transferStore[type] || '',
+  });
+
+  const appendList = screen.getByRole('list', { name: 'Append order' });
+  const appendItems = within(appendList).getAllByRole('listitem');
+  const tabs = screen.getAllByRole('tab');
+
+  // Drag concat item (customers.tsv) and drop onto SourceTabs[0] (orders.csv) -> SourceTabs unchanged
+  fireEvent.dragStart(appendItems[0], { dataTransfer: makeTransfer() });
+  fireEvent.drop(tabs[0], { dataTransfer: makeTransfer() });
+  fireEvent.dragEnd(appendItems[0]);
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+    expect.stringContaining('orders.csv'),
+    expect.stringContaining('customers.tsv'),
+    expect.stringContaining('extra.csv'),
+  ]);
+
+  // Drag SourceTabs[2] (extra.csv) and drop onto concat appendItems[0] (customers.tsv) -> concat order unchanged
+  fireEvent.dragStart(tabs[2], { dataTransfer: makeTransfer() });
+  fireEvent.drop(appendItems[0], { dataTransfer: makeTransfer() });
+  fireEvent.dragEnd(tabs[2]);
+  expect(within(screen.getByRole('list', { name: 'Append order' })).getAllByRole('listitem')[0]).toHaveTextContent(/customers\.tsv/);
+});
+
+test('Escape closes nested DateTimeFilterInput popover before closing open source library', async () => {
+  etlApi.preview.mockResolvedValue({
+    preview: {
+      columns: [{ name: 'order_date', type: 'datetime' }],
+      rows: Array.from({ length: 10 }, () => ({ order_date: '2026-06-15' })),
+      final_rows: 12,
+    },
+  });
+  await ready();
+  addOperation('filter_rows');
+
+  openLibrary();
+  expect(screen.getByRole('region', { name: 'Source library' })).toBeInTheDocument();
+
+  const dtInput = screen.getByLabelText('Rule 1 comparison value');
+  fireEvent.focus(dtInput);
+  expect(screen.getByRole('dialog', { name: 'Choose date and time' })).toBeInTheDocument();
+
+  // First Escape closes only the calendar dialog, leaving Source library open
+  fireEvent.keyDown(dtInput, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: 'Choose date and time' })).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Source library' })).toBeInTheDocument();
+
+  // Second Escape closes Source library and restores focus to Sources (1)
+  fireEvent.keyDown(dtInput, { key: 'Escape' });
+  expect(screen.queryByRole('region', { name: 'Source library' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Sources (1)' })).toHaveFocus();
 });

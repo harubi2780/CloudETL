@@ -6,10 +6,12 @@ import {
   describeStep,
   FILTER_OPERATORS_BY_TYPE,
   filterOperatorsForType,
+  isValidFilterDateTime,
   newStep,
   nextSchema,
   normalizeCastType,
   operations,
+  parseFilterDateTime,
   schemasFor,
   sourceIds,
   validateWorkflow,
@@ -333,5 +335,59 @@ describe('workflow validation', () => {
     expect(sourceIds(payload([cleanCustomer]))).toEqual([primary.id, customers.id]);
     expect(errors([{ ...join, sourceId: customers.id }], [primary, customers]))
       .toContain('Step 1: combine steps always run on the starting dataset.');
+  });
+
+  test('datetime filter validation enforces single valid date or datetime strings', () => {
+    expect(isValidFilterDateTime('2026-01-01')).toBe(true);
+    expect(isValidFilterDateTime('2024-02-29')).toBe(true);
+    expect(isValidFilterDateTime('2000-02-29')).toBe(true);
+    expect(isValidFilterDateTime('2026-06-15 14:30')).toBe(true);
+    expect(isValidFilterDateTime('2026-06-15 14:30:59')).toBe(true);
+    expect(isValidFilterDateTime('2026-06-15T14:30:00')).toBe(true);
+    expect(parseFilterDateTime(' 2026-06-15 09:05 ')).toMatchObject({
+      year: 2026,
+      month: 6,
+      day: 15,
+      hasTime: true,
+      hour: 9,
+      minute: 5,
+      second: 0,
+      dateStr: '2026-06-15',
+    });
+
+    expect(isValidFilterDateTime('2025-02-29')).toBe(false);
+    expect(isValidFilterDateTime('1900-02-29')).toBe(false);
+    expect(isValidFilterDateTime('2026-02-30')).toBe(false);
+    expect(isValidFilterDateTime('2026-04-31')).toBe(false);
+    expect(isValidFilterDateTime('2026-13-01')).toBe(false);
+    expect(isValidFilterDateTime('2026-00-10')).toBe(false);
+    expect(isValidFilterDateTime('2026-01-00')).toBe(false);
+    expect(isValidFilterDateTime('0000-01-01')).toBe(false);
+    expect(isValidFilterDateTime('2026-01-01 24:00:00')).toBe(false);
+    expect(isValidFilterDateTime('2026-01-01 12:60:00')).toBe(false);
+    expect(isValidFilterDateTime('2026-01-01 12:00:60')).toBe(false);
+    expect(isValidFilterDateTime('2026-01-01 to 2026-01-05')).toBe(false);
+    expect(isValidFilterDateTime('not-a-date')).toBe(false);
+    expect(isValidFilterDateTime('')).toBe(false);
+    expect(isValidFilterDateTime(null)).toBe(false);
+    expect(isValidFilterDateTime(20260101)).toBe(false);
+
+    const dated = {
+      ...primary,
+      columns: [
+        { name: 'city', type: 'str' },
+        { name: 'order_date', type: 'datetime' },
+      ],
+    };
+    expect(errors([step('filter_rows', { conditions: [{ column: 'order_date', operator: 'after', value: '2026-02-30' }] })], [dated]))
+      .toContain('Step 1: enter a valid date or datetime (YYYY-MM-DD or YYYY-MM-DD HH:mm:ss).');
+    expect(errors([step('filter_rows', { conditions: [{ column: 'order_date', operator: 'before', value: 'not-a-date' }] })], [dated]))
+      .toContain('Step 1: enter a valid date or datetime (YYYY-MM-DD or YYYY-MM-DD HH:mm:ss).');
+    expect(errors([step('filter_rows', { conditions: [{ column: 'order_date', operator: 'equals', value: 'bad-date' }] })], [dated]))
+      .toContain('Step 1: enter a valid date or datetime (YYYY-MM-DD or YYYY-MM-DD HH:mm:ss).');
+    expect(errors([step('filter_rows', { conditions: [{ column: 'order_date', operator: 'equals', value: '2026-06-15 14:30:00' }] })], [dated]))
+      .toEqual([]);
+    expect(errors([step('filter_rows', { conditions: [{ column: 'city', operator: 'equals', value: 'not-a-date' }] })], [dated]))
+      .toEqual([]);
   });
 });

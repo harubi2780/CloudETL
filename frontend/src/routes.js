@@ -18,13 +18,14 @@ export const workspacePages = [
     path: '/dashboard/runs',
     label: 'Runs',
     title: 'Runs',
-    description: 'Follow pipeline execution from start to finish.',
+    description: 'Track pipeline execution, compare data, and download processed results.',
   },
   {
     path: '/dashboard/results',
     label: 'Results',
     title: 'Results',
     description: 'Find the outputs of your completed workflows.',
+    hiddenInNav: true,
   },
   {
     path: '/dashboard/account',

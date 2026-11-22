@@ -20,7 +20,7 @@ services:
       retries: 12
       start_period: 10s
 
-  backend: &backend-service
+  backend:
     build:
       context: ./backend
     restart: unless-stopped
@@ -48,10 +48,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-
-  etl-worker:
-    <<: *backend-service
-    command: ["python", "manage.py", "run_etl_worker"]
 
   frontend:
     build:

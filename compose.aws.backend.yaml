@@ -1,7 +1,7 @@
-# Standalone Compose stack for EC2 #2 (Django Backend + ETL Worker).
+# Standalone Compose stack for EC2 #2 (Django Backend + embedded ETL Worker).
 # Uses an external PostgreSQL / RDS instance and AWS S3 via the EC2 IAM Instance Role.
 services:
-  backend: &aws-backend-service
+  backend:
     build:
       context: ./backend
     restart: unless-stopped
@@ -30,8 +30,3 @@ services:
       ACCOUNT_STORAGE_LIMIT_BYTES: ${ACCOUNT_STORAGE_LIMIT_BYTES:-524288000}
       BILLING_DEMO_ENABLED: "false"
       ETL_RUN_TIMEOUT_SECONDS: ${ETL_RUN_TIMEOUT_SECONDS:-300}
-
-  etl-worker:
-    <<: *aws-backend-service
-    ports: []
-    command: ["python", "manage.py", "run_etl_worker"]

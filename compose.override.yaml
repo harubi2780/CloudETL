@@ -25,7 +25,7 @@ services:
       - rustfs
 
   backend:
-    environment: &local-storage-environment
+    environment:
       # Development-only checkout simulator; explicitly set false to disable.
       BILLING_DEMO_ENABLED: ${BILLING_DEMO_ENABLED:-true}
       AWS_S3_ENDPOINT_URL: http://rustfs:9000
@@ -35,15 +35,11 @@ services:
       DATASET_LEGACY_STORAGE_ROOT: /app/legacy-media
     volumes:
       - dataset_files:/app/legacy-media:ro
-    depends_on: &local-storage-dependencies
+    depends_on:
       db:
         condition: service_healthy
       storage-init:
         condition: service_completed_successfully
-
-  etl-worker:
-    environment: *local-storage-environment
-    depends_on: *local-storage-dependencies
 
 volumes:
   rustfs_data:

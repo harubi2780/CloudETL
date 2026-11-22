@@ -1,0 +1,1116 @@
+{
+  "timestamp": "2026-11-22T16:13:44.709Z",
+  "buildDir": "D:\\Root_D\\schools\\uni\\cloudcomp\\ETLsystem\\CloudETL\\frontend\\build",
+  "outDir": "D:\\Root_D\\schools\\uni\\cloudcomp\\ETLsystem\\CloudETL\\frontend\\e2e\\artifacts",
+  "strictContrast": true,
+  "allowBaseline": false,
+  "viewports": [
+    "1440x900",
+    "1280x800",
+    "1024x768",
+    "900x700",
+    "1280x680"
+  ],
+  "views": [
+    "datasets_review",
+    "pipelines_1_source",
+    "pipelines_source_library",
+    "pipelines_2_sources_dt_popup",
+    "pipelines_compare_split",
+    "runs",
+    "account"
+  ],
+  "summary": {
+    "totalChecks": 35,
+    "passedChecks": 35,
+    "failedChecks": 0,
+    "overflowFailures": 0,
+    "clippingFailures": 0,
+    "overlapFailures": 0,
+    "assertionFailures": 0,
+    "contrastFailuresTotal": 0,
+    "consoleErrorsTotal": 0
+  },
+  "results": [
+    {
+      "view": "datasets_review",
+      "viewport": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "datasets_review_1440x900.png",
+      "url": "/dashboard/datasets",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "panelOpen": true,
+          "fileSelectPresent": true,
+          "fileOptionCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1425,
+        "innerWidth": 1440,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 266,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_1_source",
+      "viewport": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "pipelines_1_source_1440x900.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "joinDisabled": true,
+          "concatDisabled": true,
+          "combineHintPresent": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 135,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_source_library",
+      "viewport": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "pipelines_source_library_1440x900.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "sourceLibraryOpen": true,
+          "libraryItemCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 150,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_2_sources_dt_popup",
+      "viewport": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "pipelines_2_sources_dt_popup_1440x900.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "dtPopupOpen": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 204,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_compare_split",
+      "viewport": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "pipelines_compare_split_1440x900.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "splitActive": true,
+          "paneCount": 2
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 226,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 1
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "runs",
+      "viewport": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "runs_1440x900.png",
+      "url": "/dashboard/runs",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "hasRunsTable": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 49,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 2
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "account",
+      "viewport": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "account_1440x900.png",
+      "url": "/dashboard/account",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "accountLoaded": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1425,
+        "innerWidth": 1440,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 71,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 0
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "datasets_review",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "screenshot": "datasets_review_1280x800.png",
+      "url": "/dashboard/datasets",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "panelOpen": true,
+          "fileSelectPresent": true,
+          "fileOptionCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1265,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 266,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_1_source",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "screenshot": "pipelines_1_source_1280x800.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "joinDisabled": true,
+          "concatDisabled": true,
+          "combineHintPresent": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 135,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_source_library",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "screenshot": "pipelines_source_library_1280x800.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "sourceLibraryOpen": true,
+          "libraryItemCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 150,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_2_sources_dt_popup",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "screenshot": "pipelines_2_sources_dt_popup_1280x800.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "dtPopupOpen": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 204,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_compare_split",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "screenshot": "pipelines_compare_split_1280x800.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "splitActive": true,
+          "paneCount": 2
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 226,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 1
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "runs",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "screenshot": "runs_1280x800.png",
+      "url": "/dashboard/runs",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "hasRunsTable": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 49,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 2
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "account",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "screenshot": "account_1280x800.png",
+      "url": "/dashboard/account",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "accountLoaded": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1265,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 71,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 0
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "datasets_review",
+      "viewport": "1024x768",
+      "width": 1024,
+      "height": 768,
+      "screenshot": "datasets_review_1024x768.png",
+      "url": "/dashboard/datasets",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "panelOpen": true,
+          "fileSelectPresent": true,
+          "fileOptionCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1009,
+        "innerWidth": 1024,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 265,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_1_source",
+      "viewport": "1024x768",
+      "width": 1024,
+      "height": 768,
+      "screenshot": "pipelines_1_source_1024x768.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "joinDisabled": true,
+          "concatDisabled": true,
+          "combineHintPresent": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1024,
+        "innerWidth": 1024,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 132,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_source_library",
+      "viewport": "1024x768",
+      "width": 1024,
+      "height": 768,
+      "screenshot": "pipelines_source_library_1024x768.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "sourceLibraryOpen": true,
+          "libraryItemCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1024,
+        "innerWidth": 1024,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 147,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_2_sources_dt_popup",
+      "viewport": "1024x768",
+      "width": 1024,
+      "height": 768,
+      "screenshot": "pipelines_2_sources_dt_popup_1024x768.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "dtPopupOpen": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1024,
+        "innerWidth": 1024,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 201,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_compare_split",
+      "viewport": "1024x768",
+      "width": 1024,
+      "height": 768,
+      "screenshot": "pipelines_compare_split_1024x768.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "splitActive": true,
+          "paneCount": 2
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1024,
+        "innerWidth": 1024,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 224,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 1
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "runs",
+      "viewport": "1024x768",
+      "width": 1024,
+      "height": 768,
+      "screenshot": "runs_1024x768.png",
+      "url": "/dashboard/runs",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "hasRunsTable": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1024,
+        "innerWidth": 1024,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 49,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 2
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "account",
+      "viewport": "1024x768",
+      "width": 1024,
+      "height": 768,
+      "screenshot": "account_1024x768.png",
+      "url": "/dashboard/account",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "accountLoaded": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1009,
+        "innerWidth": 1024,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 71,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 0
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "datasets_review",
+      "viewport": "900x700",
+      "width": 900,
+      "height": 700,
+      "screenshot": "datasets_review_900x700.png",
+      "url": "/dashboard/datasets",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "panelOpen": true,
+          "fileSelectPresent": true,
+          "fileOptionCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 885,
+        "innerWidth": 900,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 265,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_1_source",
+      "viewport": "900x700",
+      "width": 900,
+      "height": 700,
+      "screenshot": "pipelines_1_source_900x700.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "joinDisabled": true,
+          "concatDisabled": true,
+          "combineHintPresent": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 900,
+        "innerWidth": 900,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 132,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_source_library",
+      "viewport": "900x700",
+      "width": 900,
+      "height": 700,
+      "screenshot": "pipelines_source_library_900x700.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "sourceLibraryOpen": true,
+          "libraryItemCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 900,
+        "innerWidth": 900,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 147,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_2_sources_dt_popup",
+      "viewport": "900x700",
+      "width": 900,
+      "height": 700,
+      "screenshot": "pipelines_2_sources_dt_popup_900x700.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "dtPopupOpen": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 900,
+        "innerWidth": 900,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 201,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_compare_split",
+      "viewport": "900x700",
+      "width": 900,
+      "height": 700,
+      "screenshot": "pipelines_compare_split_900x700.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "splitActive": true,
+          "paneCount": 2
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 900,
+        "innerWidth": 900,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 224,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 1
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "runs",
+      "viewport": "900x700",
+      "width": 900,
+      "height": 700,
+      "screenshot": "runs_900x700.png",
+      "url": "/dashboard/runs",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "hasRunsTable": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 885,
+        "innerWidth": 900,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 49,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 2
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "account",
+      "viewport": "900x700",
+      "width": 900,
+      "height": 700,
+      "screenshot": "account_900x700.png",
+      "url": "/dashboard/account",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "accountLoaded": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 885,
+        "innerWidth": 900,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 71,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 0
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "datasets_review",
+      "viewport": "1280x680",
+      "width": 1280,
+      "height": 680,
+      "screenshot": "datasets_review_1280x680.png",
+      "url": "/dashboard/datasets",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "panelOpen": true,
+          "fileSelectPresent": true,
+          "fileOptionCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1265,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 266,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_1_source",
+      "viewport": "1280x680",
+      "width": 1280,
+      "height": 680,
+      "screenshot": "pipelines_1_source_1280x680.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "joinDisabled": true,
+          "concatDisabled": true,
+          "combineHintPresent": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 135,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_source_library",
+      "viewport": "1280x680",
+      "width": 1280,
+      "height": 680,
+      "screenshot": "pipelines_source_library_1280x680.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "sourceLibraryOpen": true,
+          "libraryItemCount": 3
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 150,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 5
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_2_sources_dt_popup",
+      "viewport": "1280x680",
+      "width": 1280,
+      "height": 680,
+      "screenshot": "pipelines_2_sources_dt_popup_1280x680.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "dtPopupOpen": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 204,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 3
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "pipelines_compare_split",
+      "viewport": "1280x680",
+      "width": 1280,
+      "height": 680,
+      "screenshot": "pipelines_compare_split_1280x680.png",
+      "url": "/dashboard/pipelines?datasets=10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "splitActive": true,
+          "paneCount": 2
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 226,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 1
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "runs",
+      "viewport": "1280x680",
+      "width": 1280,
+      "height": 680,
+      "screenshot": "runs_1280x680.png",
+      "url": "/dashboard/runs",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "hasRunsTable": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 49,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 2
+      },
+      "consoleErrors": [],
+      "passed": true
+    },
+    {
+      "view": "account",
+      "viewport": "1280x680",
+      "width": 1280,
+      "height": 680,
+      "screenshot": "account_1280x680.png",
+      "url": "/dashboard/account",
+      "assertions": {
+        "passed": true,
+        "details": {
+          "accountLoaded": true
+        },
+        "failures": []
+      },
+      "layout": {
+        "scrollWidth": 1265,
+        "innerWidth": 1280,
+        "horizontalOverflow": false,
+        "clippedControls": [],
+        "overlappingControls": []
+      },
+      "contrast": {
+        "checkedCount": 71,
+        "failureCount": 0,
+        "failures": [],
+        "disabledAdvisoryCount": 0
+      },
+      "consoleErrors": [],
+      "passed": true
+    }
+  ]
+}

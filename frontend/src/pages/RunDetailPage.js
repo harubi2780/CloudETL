@@ -259,13 +259,15 @@ export default function RunDetailPage({
 
   return (
     <div className="etl-page">
-      <Link to={backTo}>{backLabel}</Link>
+      <div className="etl-back-row">
+        <Link className="button button-secondary etl-back-button" to={backTo}>{backLabel}</Link>
+      </div>
       <header className="page-heading etl-result-heading" aria-label="Result heading">
         <div className="etl-result-heading-copy">
           <h1>{run?.name || 'Run details'}</h1>
           {run && (
             <div className="etl-actions etl-detail-links">
-              <Link to={`/dashboard/pipelines?run=${run.id}`}>Edit and resubmit</Link>
+              <Link className="button button-secondary" to={`/dashboard/pipelines?run=${run.id}`}>Edit and resubmit</Link>
             </div>
           )}
         </div>

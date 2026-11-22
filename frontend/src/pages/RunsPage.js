@@ -37,32 +37,147 @@ export function RunHistoryList({ onSessionExpired, resultsOnly = false }) {
     return () => controller.abort();
   }, [page, filter, attempt, resultsOnly]);
 
+  const runs = state.data?.runs || [];
+  const succeededCount = runs.filter((item) => item.status === 'succeeded' && item.result_available !== false).length;
+  const activeCount = runs.filter((item) => item.status === 'running' || item.status === 'queued').length;
+  const failedCount = runs.filter((item) => item.status === 'failed').length;
+
   return (
     <section className="etl-section" aria-label={resultsOnly ? 'Completed results' : 'Run history'}>
+      {state.data && (
+        <div className="etl-kpi-grid" aria-label="Run summary metrics">
+          <div className="etl-kpi-card">
+            <span className="etl-kpi-label">{resultsOnly ? 'Completed runs' : 'Total runs'}</span>
+            <strong className="etl-kpi-value">{state.data.total_count}</strong>
+            <span className="etl-kpi-sub">{filter ? `Filtered by ${filter}` : 'All pipeline executions'}</span>
+          </div>
+          <div className="etl-kpi-card etl-kpi-card-success">
+            <span className="etl-kpi-label">Results ready (page)</span>
+            <strong className="etl-kpi-value">{succeededCount}</strong>
+            <span className="etl-kpi-sub">Available to compare &amp; export</span>
+          </div>
+          {!resultsOnly && (
+            <>
+              <div className="etl-kpi-card etl-kpi-card-info">
+                <span className="etl-kpi-label">In progress (page)</span>
+                <strong className="etl-kpi-value">{activeCount}</strong>
+                <span className="etl-kpi-sub">Queued or actively running</span>
+              </div>
+              <div className="etl-kpi-card etl-kpi-card-danger">
+                <span className="etl-kpi-label">Failed (page)</span>
+                <strong className="etl-kpi-value">{failedCount}</strong>
+                <span className="etl-kpi-sub">Needs configuration review</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="etl-toolbar">
-        {!resultsOnly && <label>Status <select value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>
-          <option value="">All statuses</option><option value="queued">Queued</option><option value="running">Running</option><option value="succeeded">Succeeded</option><option value="failed">Failed</option>
-        </select></label>}
-        <button className="button button-secondary" type="button" disabled={state.loading} onClick={() => setAttempt((value) => value + 1)}>Refresh {resultsOnly ? 'results' : 'runs'}</button>
+        {!resultsOnly && (
+          <label>
+            Status{' '}
+            <select value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>
+              <option value="">All statuses</option>
+              <option value="queued">Queued</option>
+              <option value="running">Running</option>
+              <option value="succeeded">Succeeded</option>
+              <option value="failed">Failed</option>
+            </select>
+          </label>
+        )}
+        <button className="button button-secondary" type="button" disabled={state.loading} onClick={() => setAttempt((value) => value + 1)}>
+          Refresh {resultsOnly ? 'results' : 'runs'}
+        </button>
       </div>
+
       {state.loading && <p className="etl-loading" role="status"><Spinner />Loading {resultsOnly ? 'results' : 'runs'}…</p>}
-      {state.error && <div className="etl-error" role="alert"><p>{state.error}</p><button className="button button-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button></div>}
-      {state.data && state.data.runs.length === 0 && <div className="etl-empty"><h2>{resultsOnly ? 'No completed results yet' : filter ? 'No runs with this status' : 'No runs yet'}</h2><p>{resultsOnly ? 'Results appear here when a run succeeds.' : 'Choose a dataset and submit a pipeline to start processing.'}</p><Link to="/dashboard/pipelines">Open pipeline builder</Link></div>}
-      {state.data && state.data.runs.length > 0 && <>
-        <div className="etl-table-scroll"><table className="etl-table"><caption>{resultsOnly ? 'Completed ETL results' : 'ETL run history'}</caption>
-          <thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Submitted</th><th scope="col">Finished</th><th scope="col">Actions</th></tr></thead>
-          <tbody>{state.data.runs.map((run) => <tr key={run.id}>
-            <th scope="row"><Link to={`/dashboard/${resultsOnly && run.result_available !== false ? 'results' : 'runs'}/${run.id}`}>{run.name}</Link></th>
-            <td><RunStatus status={run.status} /></td><td>{runDate(run.created_at)}</td><td>{runDate(run.finished_at)}</td>
-            <td><div className="etl-actions"><Link to={`/dashboard/${resultsOnly && run.result_available !== false ? 'results' : 'runs'}/${run.id}`}>View run &amp; result</Link>{run.status === 'succeeded' && run.result_available === false && <span className="etl-note">File removed</span>}</div></td>
-          </tr>)}</tbody>
-        </table></div>
-        <Pagination page={state.data.page} totalPages={state.data.total_pages} totalCount={state.data.total_count} onPageChange={setPage} label={resultsOnly ? 'Result pages' : 'Run pages'} />
-      </>}
+      {state.error && (
+        <div className="etl-error" role="alert">
+          <p>{state.error}</p>
+          <button className="button button-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+        </div>
+      )}
+      {state.data && state.data.runs.length === 0 && (
+        <div className="etl-empty">
+          <h2>{resultsOnly ? 'No completed results yet' : filter ? 'No runs with this status' : 'No runs yet'}</h2>
+          <p>{resultsOnly ? 'Results appear here when a run succeeds.' : 'Choose a dataset and submit a pipeline to start processing.'}</p>
+          <Link className="button button-primary" to="/dashboard/pipelines">Open pipeline builder</Link>
+        </div>
+      )}
+      {state.data && state.data.runs.length > 0 && (
+        <>
+          <div className="etl-table-scroll">
+            <table className="etl-table">
+              <caption>{resultsOnly ? 'Completed ETL results' : 'ETL run history'}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Submitted</th>
+                  <th scope="col">Finished</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.data.runs.map((run) => {
+                  const detailHref = `/dashboard/${resultsOnly && run.result_available !== false ? 'results' : 'runs'}/${run.id}`;
+                  return (
+                    <tr key={run.id}>
+                      <th scope="row">
+                        <Link className="etl-run-title-link" to={detailHref}>{run.name}</Link>
+                      </th>
+                      <td>
+                        <div className="etl-status-cell">
+                          <RunStatus status={run.status} />
+                          {run.status === 'succeeded' && run.result_available !== false && (
+                            <span className="etl-badge etl-badge-ready">Result ready</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>{runDate(run.created_at)}</td>
+                      <td>{runDate(run.finished_at)}</td>
+                      <td>
+                        <div className="etl-actions">
+                          <Link className="button button-secondary etl-action-btn" to={detailHref}>View run &amp; result</Link>
+                          {run.status === 'succeeded' && run.result_available === false && (
+                            <span className="etl-note">File removed</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={state.data.page}
+            totalPages={state.data.total_pages}
+            totalCount={state.data.total_count}
+            onPageChange={setPage}
+            label={resultsOnly ? 'Result pages' : 'Run pages'}
+          />
+        </>
+      )}
     </section>
   );
 }
 
 export default function RunsPage({ onSessionExpired }) {
-  return <div className="etl-page"><header className="page-heading"><h1>Runs</h1><p>Track submitted pipelines and inspect their status.</p></header><RunHistoryList onSessionExpired={onSessionExpired} /></div>;
+  return (
+    <div className="etl-page">
+      <header className="page-heading etl-page-header-bar">
+        <div>
+          <h1>Runs</h1>
+          <p>Track submitted pipelines, inspect execution status, and compare or download completed results.</p>
+        </div>
+        <div className="etl-actions">
+          <Link className="button button-primary" to="/dashboard/pipelines">Open pipeline builder</Link>
+          <Link className="button button-secondary" to="/dashboard/datasets">Manage datasets</Link>
+        </div>
+      </header>
+      <RunHistoryList onSessionExpired={onSessionExpired} />
+    </div>
+  );
 }

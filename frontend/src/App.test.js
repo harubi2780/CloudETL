@@ -228,14 +228,17 @@ test('returns to the requested protected page after login', async () => {
 });
 
 test.each([
-  ['datasets', 'Datasets'], ['pipelines', 'Pipelines'], ['runs', 'Runs'], ['results', 'Results'],
-])('restores a session at the %s deep link', async (path, title) => {
+  ['datasets', 'Datasets', 'Datasets'],
+  ['pipelines', 'Pipelines', 'Pipelines'],
+  ['runs', 'Runs', 'Runs'],
+  ['results', 'Results', 'Runs'],
+])('restores a session at the %s deep link', async (path, title, navLabel) => {
   window.history.replaceState(null, '', `/dashboard/${path}/`);
   startSignedIn();
   render(<App />);
   expect(await screen.findByRole('heading', { name: title, level: 1 })).toBeInTheDocument();
   const navigation = screen.getByRole('navigation', { name: 'Workspace' });
-  expect(within(navigation).getByRole('link', { name: title })).toHaveAttribute('aria-current', 'page');
+  expect(within(navigation).getByRole('link', { name: navLabel })).toHaveAttribute('aria-current', 'page');
   if (path === 'datasets') await screen.findByText('No datasets yet');
   expect(global.fetch.mock.calls.filter(([url]) => url.startsWith('/api/auth/'))).toHaveLength(2);
 });

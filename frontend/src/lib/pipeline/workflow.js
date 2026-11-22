@@ -44,6 +44,47 @@ export function defaultOperatorForType(type, caps) {
   return filterOperatorsForType(type, caps)[0] || '';
 }
 
+const FILTER_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/;
+
+export function parseFilterDateTime(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = FILTER_DATETIME_RE.exec(trimmed);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return null;
+  const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const maxDays = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day > maxDays) return null;
+  const hasTime = match[4] !== undefined;
+  let hour = 0;
+  let minute = 0;
+  let second = 0;
+  if (hasTime) {
+    hour = Number(match[4]);
+    minute = Number(match[5]);
+    second = match[6] !== undefined ? Number(match[6]) : 0;
+    if (hour > 23 || minute > 59 || second > 59) return null;
+  }
+  return {
+    year,
+    month,
+    day,
+    hasTime,
+    hour,
+    minute,
+    second,
+    dateStr: `${match[1]}-${match[2]}-${match[3]}`,
+  };
+}
+
+export function isValidFilterDateTime(value) {
+  return parseFilterDateTime(value) !== null;
+}
+
 function uniqueColumnName(base, columns) {
   const names = new Set((columns || []).map((col) => col.name));
   if (!names.has(base)) return base;
@@ -220,7 +261,12 @@ export function validateWorkflow(payload, sources, caps) {
         if (step.type === 'filter_rows' && !flagOps.includes(rule.operator)) {
           const empty = rule.value === undefined || rule.value === null || rule.value === '';
           const needsNumber = numericOnlyOps.includes(rule.operator) || (rule.operator === 'equals' && step.enabled !== false && isNumericCol);
-          if (empty || (needsNumber && !Number.isFinite(Number(rule.value))) || (dateOps.includes(rule.operator) && !String(rule.value).trim()) || (textOps.includes(rule.operator) && typeof rule.value !== 'string')) {
+          const needsDateTime = dateOps.includes(rule.operator) || (rule.operator === 'equals' && colType === 'datetime');
+          if (needsDateTime) {
+            if (empty || !isValidFilterDateTime(rule.value)) {
+              errors.push(prefix + 'enter a valid date or datetime (YYYY-MM-DD or YYYY-MM-DD HH:mm:ss).');
+            }
+          } else if (empty || (needsNumber && !Number.isFinite(Number(rule.value))) || (textOps.includes(rule.operator) && typeof rule.value !== 'string')) {
             errors.push(prefix + 'enter a valid filter value.');
           }
         }
